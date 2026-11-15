@@ -85,11 +85,12 @@ class Job(sim.Component):
     Represents the job which is composed of several tasks which need to be completed sequentially
 
     Attributes:
-        __init__:
-        process: 
+        self.tasks: The list of tasks which comprise this job.
 
     Methods:
-
+        __init__: Initializes the list of tasks.
+        process: Processes each task in order by activating the the task process_task and passivates itself so that next task is only activated when the current task is finished.
+        
     """
     def __init__(self, tasks: list[Task], *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -109,7 +110,7 @@ env = sim.Environment(trace=False)
 
 machines = [Machine() for _ in range(NUM_MACHINES)]
 
-jobs = []
+jobs: list[Job] = []
 # Maybe can simulate this with Taskgenerator? but i guess this makes more sense to hardcode for now or take user input. easier to monitor i guess - or just some random task generator. Don't think TaskGenerator is required since we don't probably want tasks to be made on the fly but known from before
 
 # task(i, j) task j for job i. Pass job_id, machine_id, duration
