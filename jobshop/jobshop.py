@@ -19,8 +19,10 @@ class Machine(sim.Component):
     Represents the machine which is responsible for completing the task
 
     Attributes:
+        waitingline: queue associated with this machine which has the tasks which need to be processed by this machine.
 
     Methods:
+        __init__: used for initializing the queue 'waitingline'
         process: simulates processessing the task by holding for duration time units, this ensures that no tasks can be performed simultaneously by a machine.
     """
 
@@ -29,6 +31,11 @@ class Machine(sim.Component):
         self.waitingline = sim.Queue('waitingline')
 
     def process(self):
+        """
+        Process task by holding for duration time units and then activating the job whose task it was
+
+        Arguments: N/A
+        """
         while True:
             while len(self.waitingline) == 0:
                 self.passivate()
@@ -36,17 +43,6 @@ class Machine(sim.Component):
             # print(self.task)
             self.hold(self.task.process_duration)
             self.task.activate()
-        
-
-    # def process_task(self, duration):
-    #     """
-    #     Process task by holding for duration time units and then activating the job whose task it was
-
-    #     Arguments: duration
-    #     """
-    #     self.job = 
-    #     self.hold(duration) # Process the task => hold for duration time units
-    #     self.activate(self.job)
 
     # def attach_agent(self, agent):
         ### Can such a method be used to attach each machine with an langgraph agent later?
@@ -55,8 +51,18 @@ class Machine(sim.Component):
 
 class Task(sim.Component):
     """
-    
+    Represents the task.
+
+    Attributes:
+        job_id: The job id which has this particular task
+        machine_id: The machine_id which this task needs to be processed on.
+        process_duration: The processing duration of this task.
+
+    Methods:
+        __init__: initializes the job_id, machine_id and process_duration.
+        process_task: Send the task to the machine.
     """
+
     def __init__(self, job_id, machine_id, process_duration, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.job_id = job_id
@@ -64,17 +70,23 @@ class Task(sim.Component):
         self.process_duration = process_duration
 
     def process_task(self): # If we name this process, then it will be activated when created which is not what we want right now.
+        """
+        Puts the task to queue for processing by machine. Activates the machine if it is passive, then passivates itself. Once the task is complete activate the job component which is associated with this task.
+        """
         self.enter(machines[self.machine_id].waitingline)
         if machines[self.machine_id].ispassive():
             machines[self.machine_id].activate()
         self.passivate()
         jobs[self.job_id].activate()
 
+
 class Job(sim.Component):
     """
     Represents the job which is composed of several tasks which need to be completed sequentially
 
     Attributes:
+        __init__:
+        process: 
 
     Methods:
 
@@ -85,33 +97,20 @@ class Job(sim.Component):
         self.tasks: list[Task] = tasks
 
     def process(self):
-        print(self.name, 'enter')
+        """
+            Processes each task in order by activating the the task process_task and passivates itself so that next task is only activated when the current task is finished.
+        """
         for i in range(len(self.tasks)):
-            print(self.name, i, self.tasks[i])
             self.tasks[i].activate(process='process_task')
             self.passivate()
 
-    # def process(self):
-    #     for machine_number, duration in self.tasks:
-    #         # machines[machine_number](duration)
-    #         self.enter(waitingline[machine_number]) # Job shouldn't enter, a task should i guess
-    #         if machines[machine_number].ispassive():
-    #             machines[machine_number].activate()
-    #         self.passivate()
-
-    # def populate_tasks(self, tasks):
-    #     self.tasks = tasks
 
 env = sim.Environment(trace=False)
 
 machines = [Machine() for _ in range(NUM_MACHINES)]
 
-# waitingline = [sim.Queue(f"waitingline_{i}") for i in range(NUM_MACHINES)] 
-
-# jobs = [Job() for _ in range(NUM_JOBS)]
-
 jobs = []
-# Maybe can simulate this with Taskgenerator? but i guess this makes more sense to hardcode for now or take user input. easier to monitor i guess
+# Maybe can simulate this with Taskgenerator? but i guess this makes more sense to hardcode for now or take user input. easier to monitor i guess - or just some random task generator. Don't think TaskGenerator is required since we don't probably want tasks to be made on the fly but known from before
 
 # task(i, j) task j for job i. Pass job_id, machine_id, duration
 
@@ -134,3 +133,8 @@ jobs.append(Job([task20, task21]))
 
 env.run()
 
+
+# Print statistics from monitors
+for id, machine in enumerate(machines):
+    print(f"----- MACHINE {id} -------\n")
+    machine.waitingline.print_histograms()
