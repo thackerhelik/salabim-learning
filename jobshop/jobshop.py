@@ -40,7 +40,7 @@ class Machine(sim.Component):
             while len(self.waitingline) == 0:
                 self.passivate()
             self.task = self.waitingline.pop()
-            # print(self.task)
+            print(self.name, " processing ", self.task, " for ", self.task.process_duration, " time units ")
             self.hold(self.task.process_duration)
             self.task.activate()
 
@@ -106,7 +106,7 @@ class Job(sim.Component):
             self.passivate()
 
 
-env = sim.Environment(trace=False)
+env = sim.Environment(trace=False)#, time_unit='seconds')
 
 machines = [Machine() for _ in range(NUM_MACHINES)]
 
@@ -131,6 +131,19 @@ jobs.append(Job([task10, task11, task12]))
 task20 = Task(2, 1, 4)
 task21 = Task(2, 2, 3)
 jobs.append(Job([task20, task21]))
+
+print(task00.name, task01.name, task02.name, task10.name, task11.name, task12.name, task20.name, task21.name)
+
+# col = ['blue', 'red', 'green']
+for id, machine in enumerate(machines):
+    sim.AnimateQueue(machine.waitingline, x=100, y=230-100*id, title=f"machine {id} waiting queue", direction='e') #, id=col[id]) for color ned sim.AnimateRectangle or something?
+
+for id, machine in enumerate(machines):
+    sim.AnimateMonitor(machine.waitingline.length, x=10, y=550-130*id, width=480, height=100, horizontal_scale=5, vertical_scale=5, title=f"Length of waiting line {id}")
+
+# Add animation
+env.animate(True)
+env.modelname('Jobshop')
 
 env.run()
 
