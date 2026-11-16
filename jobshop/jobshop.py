@@ -40,8 +40,9 @@ class Machine(sim.Component):
             while len(self.waitingline) == 0:
                 self.passivate()
             self.task = self.waitingline.pop()
-            print(self.name, " processing ", self.task, " for ", self.task.process_duration, " time units ")
+            print(self.name, " processing ", self.task, " for ", self.task.process_duration, " time units -- current time ", env.now())
             self.hold(self.task.process_duration)
+            print(self.name, " finished ", self.task, " current time ", env.now())
             self.task.activate()
 
     # def attach_agent(self, agent):
@@ -133,6 +134,8 @@ task21 = Task(2, 2, 3)
 jobs.append(Job([task20, task21]))
 
 print(task00.name, task01.name, task02.name, task10.name, task11.name, task12.name, task20.name, task21.name)
+
+# TODO: 1. Color for tasks? 2. Show the processing task too not just in queue task, Figure out how to do that. 3. Better represent task in animation (maybe if we can show processing time and id of task or something) 
 
 # col = ['blue', 'red', 'green']
 for id, machine in enumerate(machines):
