@@ -63,7 +63,11 @@ class Machine(sim.Component):
             self.task = self.waitingline.pop()
             print(self.name, " processing ", self.task, " for ", self.task.process_duration, " time units -- current time ", env.now())
             print("ID: ", self.machine_id)
+            
             tasks_animations[self.task.task_id].fillcolor = "lime"
+            tasks_animations[self.task.task_id].text = f"M: {self.machine_id}"
+            tasks_animations[self.task.task_id].textcolor=("black", "white")[env.is_dark("lime")]
+            
             AnimateMachineProgress(self.machine_id, env.now(), self.task.process_duration)
             self.an_text.text = f"Machine {self.machine_id}: processing task {self.task.task_id}"
             self.hold(self.task.process_duration)
@@ -103,6 +107,8 @@ class Task(sim.Component):
         """
         self.enter(machines[self.machine_id].waitingline)
         tasks_animations[self.task_id].fillcolor = "yellow"
+        tasks_animations[self.task_id].text = "IQ"
+        tasks_animations[self.task_id].textcolor=("black", "white")[env.is_dark("yellow")]
         if machines[self.machine_id].ispassive():
             machines[self.machine_id].activate()
         self.passivate()
@@ -128,7 +134,8 @@ class Job(sim.Component):
         self.tasks: list[Task] = tasks
         self.an_text = sim.AnimateText(text=f"Job {self.job_id}: ", x = 25, y = 400-100*self.job_id, textcolor='fg')
         for i, task in enumerate(self.tasks):
-            tasks_animations[task.task_id] = sim.AnimateRectangle(spec=(125+75*i, 400-100*self.job_id,175+75*i, 450-100*self.job_id), fillcolor="red")
+            tasks_animations[task.task_id] = sim.AnimateRectangle(spec=(125+75*i, 400-100*self.job_id,175+75*i, 450-100*self.job_id), fillcolor="red", text="")
+            sim.AnimateText(text=f"{task.machine_id}:{task.process_duration}",x=135+75*i, y=455-100*self.job_id)
         # sim.AnimateRectangle(spec = (machine_positions[self.machine_id][0], 500, machine_positions[self.machine_id][0] + machine_positions[self.machine_id][1], 600), linecolor="red", fillcolor="", linewidth=2)
 
     def process(self):
@@ -139,6 +146,7 @@ class Job(sim.Component):
             task.activate(process='process_task')
             self.passivate()
             tasks_animations[task.task_id].fillcolor = "green"
+            tasks_animations[task.task_id].text = ""
 
 
 # Animation Classes
@@ -215,7 +223,8 @@ env.width(SCREEN_WIDTH)
 env.height(SCREEN_HEIGHT)
 env.modelname('Jobshop')
 
-env.run()
+with env.video("jobshop.mp4"):
+    env.run(13)
 
 
 # Print statistics from monitors
