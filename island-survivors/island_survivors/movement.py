@@ -210,6 +210,8 @@ class ExplorerMovement:
             (0, -1),  # West
             (0, 1),   # East
         ]
+        # Randomize direction priority to break ties.
+        self.rng.shuffle(directions)
 
         # Initialize BFS.
         queue = deque([current_position])
