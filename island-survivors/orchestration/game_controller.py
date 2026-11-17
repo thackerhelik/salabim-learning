@@ -4,13 +4,15 @@ import salabim as sim
 from environment import (
     gather_resource,
     eat_berries,
+    loot_from_cache,
     get_observation,
 )
 
 from entities.loot_cache import LootCache
 
 
-def execute_action(explorer, resources, action):
+
+def execute_action(explorer, resources, loot_caches, action):
     """Execute an action selected by an agent."""
 
     action_type = action.get("action")
@@ -31,6 +33,16 @@ def execute_action(explorer, resources, action):
             amount=action.get("amount", 1),
         )
 
+    elif action_type == "loot":
+
+        return loot_from_cache(
+            explorer=explorer,
+            loot_caches=loot_caches,
+            target_position=action["target_position"],
+            resource_type=action["resource_type"],
+            amount=action.get("amount", 1),
+        )
+
     elif action_type == "none":
 
         return {
@@ -42,6 +54,7 @@ def execute_action(explorer, resources, action):
         "success": False,
         "message": f"Unknown action: {action_type}",
     }
+
 
 
 class ExplorerController(sim.Component):
@@ -115,6 +128,7 @@ class ExplorerController(sim.Component):
                 result = execute_action(
                     self.explorer,
                     self.resources,
+                    self.loot_caches,
                     action,
                 )
 

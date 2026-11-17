@@ -4,6 +4,7 @@ class RuleBasedAgent:
     def __init__(self, hunger_threshold=60):
         self.hunger_threshold = hunger_threshold
 
+    
     def decide(self, observation):
         """Choose an action based on the current observation."""
 
@@ -23,8 +24,7 @@ class RuleBasedAgent:
                     "amount": 1,
                 }
 
-            # Priority 2: Gather berries when hungry
-            # and there are berries nearby.
+            # Priority 2: Gather berries from nearby bushes.
             for resource in observation["nearby_resources"]:
 
                 if resource["resource_type"] == "berries":
@@ -35,7 +35,19 @@ class RuleBasedAgent:
                         "amount": 2,
                     }
 
-        # Priority 3: Explore.
+            # Priority 3: Loot berries from nearby caches.
+            for cache in observation.get("nearby_loot_caches", []):
+
+                if cache["inventory"].get("berries", 0) > 0:
+
+                    return {
+                        "action": "loot",
+                        "target_position": cache["position"],
+                        "resource_type": "berries",
+                        "amount": 2,
+                    }
+
+        # Priority 4: Explore.
         return {
             "action": "explore",
         }
