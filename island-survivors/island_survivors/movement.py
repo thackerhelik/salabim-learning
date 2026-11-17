@@ -192,6 +192,90 @@ class ExplorerMovement:
         # No valid path exists.
         return None
 
+    
+    def find_next_unvisited_position(self, visited_positions):
+        """Find the next step towards the nearest unvisited tile."""
+
+        current_position = (
+            self.explorer.row,
+            self.explorer.col,
+        )
+
+        num_rows = len(self.map_layout)
+        num_cols = len(self.map_layout[0])
+
+        directions = [
+            (-1, 0),  # North
+            (1, 0),   # South
+            (0, -1),  # West
+            (0, 1),   # East
+        ]
+
+        # Initialize BFS.
+        queue = deque([current_position])
+
+        # Store each position's predecessor.
+        parents = {
+            current_position: None,
+        }
+
+        while queue:
+
+            current = queue.popleft()
+
+            current_row, current_col = current
+
+            for drow, dcol in directions:
+
+                new_row = current_row + drow
+                new_col = current_col + dcol
+
+                new_position = (new_row, new_col)
+
+                # Check map boundaries.
+                if not (
+                    0 <= new_row < num_rows
+                    and 0 <= new_col < num_cols
+                ):
+                    continue
+
+                # Avoid already visited BFS nodes.
+                if new_position in parents:
+                    continue
+
+                # Check walkable terrain.
+                if self.map_layout[new_row][new_col] not in {"g", "s"}:
+                    continue
+
+                # Avoid map features.
+                if new_position in self.blocked_positions:
+                    continue
+
+                # Avoid other living explorers.
+                if new_position in self.occupied_positions:
+                    continue
+
+                # Record the predecessor.
+                parents[new_position] = current
+
+                # Check if this is an unexplored destination.
+                if new_position not in visited_positions:
+
+                    # Reconstruct the path's first step.
+                    step = new_position
+
+                    while parents[step] != current_position:
+                        step = parents[step]
+
+                    return step
+
+                # Visited tiles are still valid paths.
+                queue.append(new_position)
+
+        # No reachable unexplored tile exists.
+        return None
+
+
     def move_one_step(self, process):
         """Move randomly by one neighbouring tile."""
 
@@ -209,6 +293,21 @@ class ExplorerMovement:
 
         return self._move_to_position(process, next_position)
 
+    def move_towards_unvisited(self, process, visited_positions):
+        """Move one step towards the nearest unexplored tile."""
+
+        next_position = self.find_next_unvisited_position(
+            visited_positions
+        )
+
+        # Fall back to random movement if nothing unexplored remains.
+        if next_position is None:
+            next_position = self.find_next_position()
+
+        return self._move_to_position(
+            process,
+            next_position,
+        )
 
     def _move_to_position(self, process, next_position):
         """Animate movement to a specified neighbouring tile."""

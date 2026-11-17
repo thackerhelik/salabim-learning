@@ -100,12 +100,17 @@ class ExplorerController(sim.Component):
 
             # 3. Execute the selected action.
             if action_type == "explore":
-                moved = self.movement.move_one_step(self)
+                moved = self.movement.move_towards_unvisited(
+                    self,
+                    self.agent.visited_positions,
+                )
+
             elif action_type == "navigate":
                 moved = self.movement.move_towards(
                     self,
                     action["target_position"],
                 )
+                
             else:
                 result = execute_action(
                     self.explorer,

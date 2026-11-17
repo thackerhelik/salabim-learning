@@ -7,6 +7,9 @@ class RuleBasedAgent:
         # Resources discovered by this explorer.
         self.known_resources = {}
 
+        # Tiles visited by this explorer.
+        self.visited_positions = set()
+
     
     def decide(self, observation):
         """Choose an action based on the current observation."""
@@ -89,18 +92,21 @@ class RuleBasedAgent:
 
 
     def update_memory(self, observation):
-        """Update remembered resources using current observations."""
+        """Update the explorer's memory using current observations."""
 
+        # Remember the current position.
+        current_position = tuple(observation["position"])
+
+        self.visited_positions.add(current_position)
+
+        # Update known resources.
         for resource in observation["nearby_resources"]:
 
             position = tuple(resource["position"])
 
             if resource["quantity"] > 0:
-
                 # Remember or update the resource.
                 self.known_resources[position] = resource.copy()
-
             else:
-
                 # Forget depleted resources.
                 self.known_resources.pop(position, None)
