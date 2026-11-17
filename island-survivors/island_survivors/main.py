@@ -44,6 +44,7 @@ def main():
     draw_map(env, **map_options)
 
     resources = create_resources()
+    loot_caches = {}
 
     # Draw explorers
     explorer_animations = draw_explorers(
@@ -63,6 +64,18 @@ def main():
     occupied_positions = {
         (explorer.row, explorer.col)
         for explorer in EXPLORERS
+    }
+
+    # TEMPORARY DEATH TEST
+    ava = EXPLORERS[0]
+
+    ava.health = 10
+    ava.hunger = 100
+
+    ava.inventory = {
+        "wood": 5,
+        "stone": 2,
+        "berries": 3,
     }
 
     # Create a movement component for each explorer
@@ -91,6 +104,10 @@ def main():
             agent=RuleBasedAgent(),
             resources=resources,
             movement=movement,
+
+            loot_caches=loot_caches,
+            occupied_positions=occupied_positions,
+
             decision_interval=1,
         )
 

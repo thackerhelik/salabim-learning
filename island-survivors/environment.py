@@ -1,5 +1,6 @@
 from entities.resource import Resource
 from island_survivors.map_data import FEATURES
+from entities.loot_cache import LootCache
 
 
 # Default quantities for collectible resources
@@ -114,6 +115,83 @@ def gather_resource(explorer, resources, target_position, amount=2):
 
 
 
+def loot_from_cache(
+    explorer,
+    loot_caches,
+    target_position,
+    resource_type,
+    amount=1,
+):
+    """Collect resources from a nearby loot cache."""
+
+    if not explorer.is_alive:
+        return {
+            "success": False,
+            "message": "Explorer is not alive.",
+            "collected": 0,
+        }
+
+    if amount <= 0:
+        raise ValueError("Collection amount must be positive.")
+
+    # Check whether the cache is adjacent.
+    target_row, target_col = target_position
+
+    distance = (
+        abs(explorer.row - target_row)
+        + abs(explorer.col - target_col)
+    )
+
+    if distance > 1:
+        return {
+            "success": False,
+            "message": "Loot cache is not adjacent.",
+            "collected": 0,
+        }
+
+    # Find the loot cache.
+    cache = loot_caches.get(target_position)
+
+    if cache is None:
+        return {
+            "success": False,
+            "message": "No loot cache at the target position.",
+            "collected": 0,
+        }
+
+    # Check whether inventory supports this resource.
+    if resource_type not in explorer.inventory:
+        return {
+            "success": False,
+            "message": "Unknown inventory resource type.",
+            "collected": 0,
+        }
+
+    # Collect the requested resource.
+    collected = cache.collect(resource_type, amount)
+
+    if collected == 0:
+        return {
+            "success": False,
+            "message": f"No {resource_type} available in cache.",
+            "collected": 0,
+        }
+
+    # Update explorer inventory.
+    explorer.inventory[resource_type] += collected
+
+    # Remove the cache once completely depleted.
+    if cache.is_empty:
+        del loot_caches[target_position]
+
+    return {
+        "success": True,
+        "message": f"Collected {collected} {resource_type} from loot cache.",
+        "collected": collected,
+    }
+
+
+
 HUNGER_REDUCTION_PER_BERRY = 25
 MAX_HUNGER = 100
 HUNGER_INCREASE_PER_UPDATE = 10
@@ -212,10 +290,28 @@ def update_survival_needs(explorer):
     }
 
 
-def get_observation(explorer, resources):
+def get_observation(explorer, resources, loot_caches=None):
     """Generate an observation of the explorer's current situation."""
 
     nearby_resources = []
+
+    nearby_loot_caches = []
+
+    if loot_caches is not None:
+
+        for position, cache in loot_caches.items():
+
+            distance = (
+                abs(explorer.row - cache.row)
+                + abs(explorer.col - cache.col)
+            )
+
+            if distance <= 1 and not cache.is_empty:
+
+                nearby_loot_caches.append({
+                    "position": position,
+                    "inventory": cache.inventory.copy(),
+                })
 
     for position, resource in resources.items():
 
@@ -242,4 +338,5 @@ def get_observation(explorer, resources):
         "inventory": explorer.inventory.copy(),
         "is_alive": explorer.is_alive,
         "nearby_resources": nearby_resources,
+        "nearby_loot_caches": nearby_loot_caches,
     }
