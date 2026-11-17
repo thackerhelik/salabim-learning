@@ -27,6 +27,6 @@ class Explorer:
 EXPLORERS = [
     Explorer(name="Ava", row=3, col=8, color="#E76F51"),
     Explorer("Bram", 3, 9, "#457BCE"),
-    Explorer("Cleo", 7, 4, "#E9C74B"),
+    Explorer("Cleo", 7, 4, "#F30BF3"),
     Explorer("Dax", 7, 6, "#9B72CF"),
 ]

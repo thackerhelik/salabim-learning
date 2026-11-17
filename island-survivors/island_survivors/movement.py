@@ -1,14 +1,12 @@
-
 import random
-import salabim as sim
 
 from island_survivors.map_renderer import get_tile_center
 
 
-class ExplorerMovement(sim.Component):
-    """Controls the movement of an individual explorer."""
+class ExplorerMovement:
+    """Handles the movement and animation of an explorer."""
 
-    def setup(
+    def __init__(
         self,
         explorer,
         animation_objects,
@@ -16,7 +14,6 @@ class ExplorerMovement(sim.Component):
         blocked_positions,
         occupied_positions,
         map_options,
-        steps=10,
         move_duration=0.75,
         pause_duration=0.15,
         seed=42,
@@ -32,7 +29,6 @@ class ExplorerMovement(sim.Component):
         self.origin_x = map_options["origin_x"]
         self.origin_y = map_options["origin_y"]
 
-        self.steps = steps
         self.move_duration = move_duration
         self.pause_duration = pause_duration
 
@@ -63,22 +59,22 @@ class ExplorerMovement(sim.Component):
 
             new_position = (new_row, new_col)
 
-            # Check map boundaries
+            # Check map boundaries.
             if not (
                 0 <= new_row < num_rows
                 and 0 <= new_col < num_cols
             ):
                 continue
 
-            # Check walkable terrain
+            # Check walkable terrain.
             if self.map_layout[new_row][new_col] not in {"g", "s"}:
                 continue
 
-            # Avoid blocked positions
+            # Avoid map features.
             if new_position in self.blocked_positions:
                 continue
 
-            # Avoid other explorers
+            # Avoid other explorers.
             if new_position in self.occupied_positions:
                 continue
 
@@ -86,66 +82,64 @@ class ExplorerMovement(sim.Component):
 
         return None
 
-    def process(self):
+    def move_one_step(self, process):
+        """Move the explorer by one tile, with smooth animation."""
+
+        next_position = self.find_next_position()
+
+        if next_position is None:
+            return False
+
+        current_position = (
+            self.explorer.row,
+            self.explorer.col,
+        )
+
+        # Reserve the destination to prevent collisions.
+        self.occupied_positions.add(next_position)
+
+        new_row, new_col = next_position
+
+        target_x, target_y = get_tile_center(
+            new_row,
+            new_col,
+            len(self.map_layout),
+            self.tile_size,
+            self.origin_x,
+            self.origin_y,
+        )
 
         position = self.animation_objects["position"]
 
-        for _ in range(self.steps):
+        start_x = position["x"]
+        start_y = position["y"]
 
-            current_position = (
-                self.explorer.row,
-                self.explorer.col,
+        # Smooth movement through interpolation.
+        animation_steps = 10
+        step_duration = self.move_duration / animation_steps
+
+        for i in range(1, animation_steps + 1):
+
+            fraction = i / animation_steps
+
+            position["x"] = (
+                start_x + (target_x - start_x) * fraction
             )
 
-            next_position = self.find_next_position()
-
-            # No available movement
-            if next_position is None:
-                self.hold(self.pause_duration)
-                continue
-
-            # Reserve destination
-            self.occupied_positions.add(next_position)
-
-            new_row, new_col = next_position
-
-            # Calculate destination screen coordinates
-            target_x, target_y = get_tile_center(
-                new_row,
-                new_col,
-                len(self.map_layout),
-                self.tile_size,
-                self.origin_x,
-                self.origin_y,
+            position["y"] = (
+                start_y + (target_y - start_y) * fraction
             )
 
-            # Current screen coordinates
-            start_x = position["x"]
-            start_y = position["y"]
+            # Advance the calling Salabim component.
+            process.hold(step_duration)
 
-            # Smooth movement using interpolation
-            animation_steps = 10
-            step_duration = self.move_duration / animation_steps
+        # Update the explorer's actual grid position.
+        self.explorer.row = new_row
+        self.explorer.col = new_col
 
-            for i in range(1, animation_steps + 1):
+        # Release the previous tile.
+        self.occupied_positions.remove(current_position)
 
-                fraction = i / animation_steps
+        process.hold(self.pause_duration)
 
-                position["x"] = (
-                    start_x + (target_x - start_x) * fraction
-                )
-
-                position["y"] = (
-                    start_y + (target_y - start_y) * fraction
-                )
-
-                self.hold(step_duration)
-
-            # Update actual grid position
-            self.occupied_positions.remove(current_position)
-
-            self.explorer.row = new_row
-            self.explorer.col = new_col
-
-            # Pause before next movement
-            self.hold(self.pause_duration)
+        return True

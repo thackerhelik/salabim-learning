@@ -8,6 +8,11 @@ from island_survivors.map_renderer import (
 from island_survivors.explorers import EXPLORERS
 from island_survivors.map_data import MAP_LAYOUT, FEATURES
 from island_survivors.movement import ExplorerMovement
+from island_survivors.survival import ExplorerNeeds
+
+from environment import create_resources
+from agents.rule_based_agent import RuleBasedAgent
+from orchestration.game_controller import ExplorerController
 
 
 def main():
@@ -38,6 +43,8 @@ def main():
     # Draw the island
     draw_map(env, **map_options)
 
+    resources = create_resources()
+
     # Draw explorers
     explorer_animations = draw_explorers(
         env,
@@ -60,11 +67,9 @@ def main():
 
     # Create a movement component for each explorer
     for index, explorer in enumerate(EXPLORERS):
-
-        ExplorerMovement(
-            env=env,
+        # Create a movement helper for this explorer.
+        movement = ExplorerMovement(
             explorer=explorer,
-
             animation_objects=explorer_animations[explorer.name],
 
             map_layout=MAP_LAYOUT,
@@ -73,11 +78,27 @@ def main():
 
             map_options=map_options,
 
-            steps=10,
             move_duration=0.75,
             pause_duration=0.15,
 
             seed=42 + index,
+        )
+
+        # Create a decision-making controller.
+        ExplorerController(
+            env=env,
+            explorer=explorer,
+            agent=RuleBasedAgent(),
+            resources=resources,
+            movement=movement,
+            decision_interval=1,
+        )
+
+        # Continue tracking hunger and health independently.
+        ExplorerNeeds(
+            env=env,
+            explorer=explorer,
+            update_interval=5,
         )
 
     # Side panel
