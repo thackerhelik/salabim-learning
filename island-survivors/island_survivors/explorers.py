@@ -10,6 +10,8 @@ class Explorer:
     col: int
     color: str
 
+    team_id: int = 1
+
     health: int = 100
     hunger: int = 0
 
@@ -25,8 +27,8 @@ class Explorer:
 
 # Initial explorers
 EXPLORERS = [
-    Explorer(name="Ava", row=3, col=8, color="#E76F51"),
-    Explorer("Bram", 3, 9, "#457BCE"),
-    Explorer("Cleo", 7, 4, "#F30BF3"),
-    Explorer("Dax", 7, 6, "#9B72CF"),
+    Explorer(name="Ava", row=3, col=8, color="#E76F51", team_id=1),
+    Explorer(name="Bram", row=3, col=9, color="#457BCE", team_id=1),
+    Explorer(name="Cleo", row=7, col=4, color="#F30BF3", team_id=1),
+    Explorer(name="Dax", row=7, col=6, color="#9B72CF", team_id=1),
 ]

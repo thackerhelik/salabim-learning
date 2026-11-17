@@ -4,10 +4,13 @@ class RuleBasedAgent:
     def __init__(self, hunger_threshold=60):
         self.hunger_threshold = hunger_threshold
 
-        # Resources discovered by this explorer.
+        # Personally discovered resources.
         self.known_resources = {}
 
-        # Tiles visited by this explorer.
+        # Resources discovered by team members.
+        self.shared_resources = {}
+
+        # Personally visited tiles.
         self.visited_positions = set()
 
     
@@ -59,9 +62,15 @@ class RuleBasedAgent:
             # Priority 4: Navigate towards a remembered berry bush.
             current_position = observation["position"]
 
+            # Combine personal and shared discoveries.
+            all_known_resources = {
+                **self.shared_resources,
+                **self.known_resources,
+            }
+
             known_berries = [
                 resource
-                for resource in self.known_resources.values()
+                for resource in all_known_resources.values()
                 if (
                     resource["resource_type"] == "berries"
                     and resource["quantity"] > 0
@@ -90,23 +99,39 @@ class RuleBasedAgent:
             "action": "explore",
         }
 
-
+    
     def update_memory(self, observation):
-        """Update the explorer's memory using current observations."""
+        """Update individual and shared memory."""
 
         # Remember the current position.
         current_position = tuple(observation["position"])
-
         self.visited_positions.add(current_position)
 
-        # Update known resources.
+        # Update personally observed resources.
         for resource in observation["nearby_resources"]:
 
             position = tuple(resource["position"])
 
             if resource["quantity"] > 0:
-                # Remember or update the resource.
+
                 self.known_resources[position] = resource.copy()
+
             else:
-                # Forget depleted resources.
+
+                self.known_resources.pop(position, None)
+                self.shared_resources.pop(position, None)
+
+        # Update knowledge obtained from the team.
+        for resource in observation.get("team_resources", []):
+
+            position = tuple(resource["position"])
+
+            if resource["quantity"] > 0:
+
+                self.shared_resources[position] = resource.copy()
+
+            else:
+
+                # A teammate has reported that this resource is depleted.
+                self.shared_resources.pop(position, None)
                 self.known_resources.pop(position, None)

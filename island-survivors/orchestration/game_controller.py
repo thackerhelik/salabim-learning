@@ -68,6 +68,7 @@ class ExplorerController(sim.Component):
         movement,
         loot_caches,
         occupied_positions,
+        team_knowledge,
         decision_interval=1,
     ):
         self.explorer = explorer
@@ -76,6 +77,7 @@ class ExplorerController(sim.Component):
         self.movement = movement
         self.loot_caches = loot_caches
         self.occupied_positions = occupied_positions
+        self.team_knowledge = team_knowledge
         self.decision_interval = decision_interval
         self.death_handled = False
 
@@ -90,7 +92,27 @@ class ExplorerController(sim.Component):
                 self.loot_caches,
             )
 
-            # 2. Ask the agent to decide.
+            # 2. Publish discoveries (locally observed resources) to the team.
+            for resource in observation["nearby_resources"]:
+
+                self.team_knowledge.update_resource(
+                    resource=resource,
+                    discovered_by=self.explorer.name,
+                    observed_at=self.env.now(),
+                )
+
+            # 3. Attach shared team knowledge to the observation.
+            observation["team_resources"] = (
+                self.team_knowledge.get_resources()
+            )
+            if observation["team_resources"]:
+                print(
+                    f"[TEAM {self.explorer.team_id}] "
+                    f"{self.explorer.name} knows about: "
+                    f"{[(r['position'], r['discovered_by']) for r in observation['team_resources']]}"
+                )
+
+            # 4. Ask the agent to decide.
             action = self.agent.decide(observation)
 
             action_type = action.get("action")
@@ -98,7 +120,7 @@ class ExplorerController(sim.Component):
             # Track how much simulation time the action consumes.
             action_duration = 0
 
-            # 3. Execute the selected action.
+            # 5. Execute the selected action.
             if action_type == "explore":
                 moved = self.movement.move_towards_unvisited(
                     self,
@@ -142,7 +164,7 @@ class ExplorerController(sim.Component):
                         "message": "No valid movement path available.",
                     }
 
-            # 4. Log the decision and outcome.
+            # 6. Log the decision and outcome.
             print(
                 f"t={self.env.now():.2f} | "
                 f"{self.explorer.name} | "
@@ -150,7 +172,7 @@ class ExplorerController(sim.Component):
                 f"{result['message']}"
             )
 
-            # 5. Wait only for the remaining decision interval.
+            # 7. Wait only for the remaining decision interval.
             remaining_time = max(
                 0,
                 self.decision_interval - action_duration,

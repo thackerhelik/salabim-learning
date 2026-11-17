@@ -14,6 +14,8 @@ from environment import create_resources
 from agents.rule_based_agent import RuleBasedAgent
 from orchestration.game_controller import ExplorerController
 
+from entities.team_knowledge import TeamKnowledge
+
 
 def main():
 
@@ -47,6 +49,15 @@ def main():
 
     resources = create_resources()
     loot_caches = {}
+
+    # Create one shared knowledge board per team.
+    team_knowledge_boards = {
+        team_id: TeamKnowledge(team_id)
+        for team_id in {
+            explorer.team_id
+            for explorer in EXPLORERS
+        }
+    }
 
     # Draw explorers
     explorer_animations = draw_explorers(
@@ -97,6 +108,8 @@ def main():
 
             loot_caches=loot_caches,
             occupied_positions=occupied_positions,
+
+            team_knowledge=team_knowledge_boards[explorer.team_id],
 
             decision_interval=1,
         )
