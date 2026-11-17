@@ -31,11 +31,11 @@ class RuleBasedAgent:
 
             # Priority 2: Gather berries from nearby bushes.
             for resource in observation["nearby_resources"]:
+
                 if (
                     resource["resource_type"] == "berries"
                     and resource["quantity"] > 0
                 ):
-
                     return {
                         "action": "gather",
                         "target_position": resource["position"],
@@ -46,7 +46,6 @@ class RuleBasedAgent:
             for cache in observation.get("nearby_loot_caches", []):
 
                 if cache["inventory"].get("berries", 0) > 0:
-
                     return {
                         "action": "loot",
                         "target_position": cache["position"],
@@ -54,7 +53,36 @@ class RuleBasedAgent:
                         "amount": 2,
                     }
 
-        # Priority 4: Explore.
+            # Priority 4: Navigate towards a remembered berry bush.
+            current_position = observation["position"]
+
+            known_berries = [
+                resource
+                for resource in self.known_resources.values()
+                if (
+                    resource["resource_type"] == "berries"
+                    and resource["quantity"] > 0
+                )
+            ]
+
+            if known_berries:
+
+                # Select the closest remembered berry bush
+                # using Manhattan distance.
+                target = min(
+                    known_berries,
+                    key=lambda resource: (
+                        abs(current_position[0] - resource["position"][0])
+                        + abs(current_position[1] - resource["position"][1])
+                    ),
+                )
+
+                return {
+                    "action": "navigate",
+                    "target_position": target["position"],
+                }
+
+        # Priority 5: Explore.
         return {
             "action": "explore",
         }

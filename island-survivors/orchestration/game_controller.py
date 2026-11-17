@@ -100,9 +100,23 @@ class ExplorerController(sim.Component):
 
             # 3. Execute the selected action.
             if action_type == "explore":
-
                 moved = self.movement.move_one_step(self)
+            elif action_type == "navigate":
+                moved = self.movement.move_towards(
+                    self,
+                    action["target_position"],
+                )
+            else:
+                result = execute_action(
+                    self.explorer,
+                    self.resources,
+                    self.loot_caches,
+                    action,
+                )
+                moved = None
 
+            # Handle movement results.
+            if moved is not None:
                 if moved:
                     action_duration = (
                         self.movement.move_duration
@@ -120,17 +134,8 @@ class ExplorerController(sim.Component):
                 else:
                     result = {
                         "success": False,
-                        "message": "No valid neighbouring tile.",
+                        "message": "No valid movement path available.",
                     }
-
-            else:
-
-                result = execute_action(
-                    self.explorer,
-                    self.resources,
-                    self.loot_caches,
-                    action,
-                )
 
             # 4. Log the decision and outcome.
             print(

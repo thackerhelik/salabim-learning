@@ -1,5 +1,5 @@
 import random
-
+from collections import deque
 from island_survivors.map_renderer import get_tile_center
 
 
@@ -82,10 +82,136 @@ class ExplorerMovement:
 
         return None
 
+    def find_next_position_towards(self, target_position):
+        """Find the next step towards a resource using BFS."""
+
+        current_position = (
+            self.explorer.row,
+            self.explorer.col,
+        )
+
+        target_row, target_col = target_position
+
+        num_rows = len(self.map_layout)
+        num_cols = len(self.map_layout[0])
+
+        directions = [
+            (-1, 0),  # North
+            (1, 0),   # South
+            (0, -1),  # West
+            (0, 1),   # East
+        ]
+
+        # The explorer needs to reach a tile adjacent to the resource,
+        # rather than the resource tile itself.
+        approach_positions = set()
+
+        for drow, dcol in directions:
+
+            row = target_row + drow
+            col = target_col + dcol
+
+            if not (0 <= row < num_rows and 0 <= col < num_cols):
+                continue
+
+            position = (row, col)
+
+            if self.map_layout[row][col] not in {"g", "s"}:
+                continue
+
+            if position in self.blocked_positions:
+                continue
+
+            approach_positions.add(position)
+
+        if not approach_positions:
+            return None
+
+        if current_position in approach_positions:
+            return None
+
+        # Initialize BFS.
+        queue = deque([current_position])
+
+        # Store each position's predecessor.
+        parents = {
+            current_position: None,
+        }
+
+        while queue:
+
+            current = queue.popleft()
+
+            current_row, current_col = current
+
+            for drow, dcol in directions:
+
+                new_row = current_row + drow
+                new_col = current_col + dcol
+
+                new_position = (new_row, new_col)
+
+                # Check map boundaries.
+                if not (
+                    0 <= new_row < num_rows
+                    and 0 <= new_col < num_cols
+                ):
+                    continue
+
+                # Avoid already visited positions.
+                if new_position in parents:
+                    continue
+
+                # Check walkable terrain.
+                if self.map_layout[new_row][new_col] not in {"g", "s"}:
+                    continue
+
+                # Avoid map features.
+                if new_position in self.blocked_positions:
+                    continue
+
+                # Avoid other explorers.
+                if new_position in self.occupied_positions:
+                    continue
+
+                parents[new_position] = current
+
+                # Check whether we reached an approach tile.
+                if new_position in approach_positions:
+
+                    # Reconstruct the path's first step.
+                    step = new_position
+
+                    while parents[step] != current_position:
+                        step = parents[step]
+
+                    return step
+
+                queue.append(new_position)
+
+        # No valid path exists.
+        return None
+
     def move_one_step(self, process):
-        """Move the explorer by one tile, with smooth animation."""
+        """Move randomly by one neighbouring tile."""
 
         next_position = self.find_next_position()
+
+        return self._move_to_position(process, next_position)
+
+
+    def move_towards(self, process, target_position):
+        """Move one step towards a target using BFS."""
+
+        next_position = self.find_next_position_towards(
+            target_position
+        )
+
+        return self._move_to_position(process, next_position)
+
+
+    def _move_to_position(self, process, next_position):
+        """Animate movement to a specified neighbouring tile."""
 
         if next_position is None:
             return False
