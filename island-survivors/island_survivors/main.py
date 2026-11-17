@@ -16,6 +16,8 @@ from orchestration.game_controller import ExplorerController
 
 from entities.team_knowledge import TeamKnowledge
 
+from entities.team_storage import TeamStorage
+
 
 def main():
 
@@ -49,6 +51,32 @@ def main():
 
     resources = create_resources()
     loot_caches = {}
+
+    # Find the existing chest on the map.
+    chest_positions = [
+        (row, col)
+        for kind, row, col in FEATURES
+        if kind == "chest"
+    ]
+
+    if not chest_positions:
+        raise ValueError("No chest found on the map.")
+
+    storage_row, storage_col = chest_positions[0]
+
+
+    # Create one storage inventory per team.
+    team_storages = {
+        team_id: TeamStorage(
+            team_id=team_id,
+            row=storage_row,
+            col=storage_col,
+        )
+        for team_id in {
+            explorer.team_id
+            for explorer in EXPLORERS
+        }
+    }
 
     # Create one shared knowledge board per team.
     team_knowledge_boards = {
@@ -110,6 +138,7 @@ def main():
             occupied_positions=occupied_positions,
 
             team_knowledge=team_knowledge_boards[explorer.team_id],
+            team_storage=team_storages[explorer.team_id],
 
             decision_interval=1,
         )

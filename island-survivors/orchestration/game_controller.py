@@ -6,13 +6,21 @@ from environment import (
     eat_berries,
     loot_from_cache,
     get_observation,
+    deposit_to_storage,
+    withdraw_from_storage,
 )
 
 from entities.loot_cache import LootCache
 
 
 
-def execute_action(explorer, resources, loot_caches, action):
+def execute_action(
+        explorer,
+        resources,
+        loot_caches,
+        action,
+        team_storage=None,
+    ):
     """Execute an action selected by an agent."""
 
     action_type = action.get("action")
@@ -43,6 +51,36 @@ def execute_action(explorer, resources, loot_caches, action):
             amount=action.get("amount", 1),
         )
 
+    elif action_type == "deposit":
+
+        if team_storage is None:
+            return {
+                "success": False,
+                "message": "Team storage is unavailable.",
+            }
+
+        return deposit_to_storage(
+            explorer=explorer,
+            storage=team_storage,
+            resource_type=action["resource_type"],
+            amount=action.get("amount", 1),
+        )
+
+    elif action_type == "withdraw":
+
+        if team_storage is None:
+            return {
+                "success": False,
+                "message": "Team storage is unavailable.",
+            }
+
+        return withdraw_from_storage(
+            explorer=explorer,
+            storage=team_storage,
+            resource_type=action["resource_type"],
+            amount=action.get("amount", 1),
+        )
+
     elif action_type == "none":
 
         return {
@@ -69,6 +107,7 @@ class ExplorerController(sim.Component):
         loot_caches,
         occupied_positions,
         team_knowledge,
+        team_storage=None,
         decision_interval=1,
     ):
         self.explorer = explorer
@@ -78,6 +117,7 @@ class ExplorerController(sim.Component):
         self.loot_caches = loot_caches
         self.occupied_positions = occupied_positions
         self.team_knowledge = team_knowledge
+        self.team_storage = team_storage
         self.decision_interval = decision_interval
         self.death_handled = False
 
@@ -91,6 +131,15 @@ class ExplorerController(sim.Component):
                 self.resources,
                 self.loot_caches,
             )
+
+            if self.team_storage is not None:
+                observation["team_storage"] = {
+                    "position": (
+                        self.team_storage.row,
+                        self.team_storage.col,
+                    ),
+                    "inventory": self.team_storage.inventory.copy(),
+                }
 
             # 2. Publish discoveries (locally observed resources) to the team.
             for resource in observation["nearby_resources"]:
@@ -139,6 +188,7 @@ class ExplorerController(sim.Component):
                     self.resources,
                     self.loot_caches,
                     action,
+                    team_storage=self.team_storage,
                 )
                 moved = None
 

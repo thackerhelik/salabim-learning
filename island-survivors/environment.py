@@ -340,3 +340,122 @@ def get_observation(explorer, resources, loot_caches=None):
         "nearby_resources": nearby_resources,
         "nearby_loot_caches": nearby_loot_caches,
     }
+
+
+def validate_storage_access(explorer, storage):
+    """Validate whether an explorer can access team storage."""
+
+    if not explorer.is_alive:
+        return "Explorer is not alive."
+
+    if explorer.team_id != storage.team_id:
+        return "Explorer does not belong to this team."
+
+    distance = (
+        abs(explorer.row - storage.row)
+        + abs(explorer.col - storage.col)
+    )
+
+    if distance > 1:
+        return "Storage is not adjacent."
+
+    return None
+
+
+
+def deposit_to_storage(
+    explorer,
+    storage,
+    resource_type,
+    amount,
+):
+    """Deposit resources from an explorer into team storage."""
+
+    error = validate_storage_access(explorer, storage)
+
+    if error:
+        return {
+            "success": False,
+            "message": error,
+            "transferred": 0,
+        }
+
+    if amount <= 0:
+        raise ValueError("Deposit amount must be positive.")
+
+    if resource_type not in explorer.inventory:
+        return {
+            "success": False,
+            "message": "Unknown inventory resource type.",
+            "transferred": 0,
+        }
+
+    available = explorer.inventory[resource_type]
+
+    deposited = min(amount, available)
+
+    if deposited == 0:
+        return {
+            "success": False,
+            "message": f"No {resource_type} available to deposit.",
+            "transferred": 0,
+        }
+
+    # Add resources to shared storage.
+    storage.deposit(resource_type, deposited)
+
+    # Remove resources from explorer inventory.
+    explorer.inventory[resource_type] -= deposited
+
+    return {
+        "success": True,
+        "message": f"Deposited {deposited} {resource_type}.",
+        "transferred": deposited,
+    }
+
+
+def withdraw_from_storage(
+    explorer,
+    storage,
+    resource_type,
+    amount,
+):
+    """Withdraw resources from team storage into an explorer's inventory."""
+
+    error = validate_storage_access(explorer, storage)
+
+    if error:
+        return {
+            "success": False,
+            "message": error,
+            "transferred": 0,
+        }
+
+    if amount <= 0:
+        raise ValueError("Withdrawal amount must be positive.")
+
+    if resource_type not in explorer.inventory:
+        return {
+            "success": False,
+            "message": "Unknown inventory resource type.",
+            "transferred": 0,
+        }
+
+    # Withdraw available resources.
+    withdrawn = storage.withdraw(resource_type, amount)
+
+    if withdrawn == 0:
+        return {
+            "success": False,
+            "message": f"No {resource_type} available in storage.",
+            "transferred": 0,
+        }
+
+    # Update explorer inventory.
+    explorer.inventory[resource_type] += withdrawn
+
+    return {
+        "success": True,
+        "message": f"Withdrew {withdrawn} {resource_type}.",
+        "transferred": withdrawn,
+    }
