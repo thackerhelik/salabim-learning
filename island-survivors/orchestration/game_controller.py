@@ -110,7 +110,7 @@ class ExplorerController(sim.Component):
                     self,
                     action["target_position"],
                 )
-                
+
             else:
                 result = execute_action(
                     self.explorer,
@@ -144,6 +144,7 @@ class ExplorerController(sim.Component):
 
             # 4. Log the decision and outcome.
             print(
+                f"t={self.env.now():.2f} | "
                 f"{self.explorer.name} | "
                 f"{action_type} | "
                 f"{result['message']}"

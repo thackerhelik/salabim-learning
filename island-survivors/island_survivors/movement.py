@@ -342,7 +342,7 @@ class ExplorerMovement:
         start_y = position["y"]
 
         # Smooth movement through interpolation.
-        animation_steps = 10
+        animation_steps = 20
         step_duration = self.move_duration / animation_steps
 
         for i in range(1, animation_steps + 1):

@@ -31,6 +31,8 @@ def main():
         title="Island Survivors",
         background_color="#173449",
         speed=1,
+        fps=30,
+        show_fps=True,
     )
 
     # Map configuration
