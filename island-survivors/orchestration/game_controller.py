@@ -75,12 +75,20 @@ class ExplorerController(sim.Component):
 
             action_type = action.get("action")
 
+            # Track how much simulation time the action consumes.
+            action_duration = 0
+
             # 3. Execute the selected action.
             if action_type == "explore":
 
                 moved = self.movement.move_one_step(self)
 
                 if moved:
+                    action_duration = (
+                        self.movement.move_duration
+                        + self.movement.pause_duration
+                    )
+
                     result = {
                         "success": True,
                         "message": (
@@ -110,5 +118,11 @@ class ExplorerController(sim.Component):
                 f"{result['message']}"
             )
 
-            # 5. Wait before the next decision.
-            self.hold(self.decision_interval)
+            # 5. Wait only for the remaining decision interval.
+            remaining_time = max(
+                0,
+                self.decision_interval - action_duration,
+            )
+
+            if remaining_time > 0:
+                self.hold(remaining_time)
