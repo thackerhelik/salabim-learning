@@ -15,8 +15,8 @@ from agents.rule_based_agent import RuleBasedAgent
 from orchestration.game_controller import ExplorerController
 
 from entities.team_knowledge import TeamKnowledge
-
 from entities.team_storage import TeamStorage
+from entities.team_task_board import TeamTaskBoard
 
 
 def main():
@@ -64,6 +64,14 @@ def main():
 
     storage_row, storage_col = chest_positions[0]
 
+    # Team task board
+    team_task_boards = {
+        team_id: TeamTaskBoard(team_id)
+        for team_id in {
+            explorer.team_id
+            for explorer in EXPLORERS
+        }
+    }
 
     # Create one storage inventory per team.
     team_storages = {
@@ -138,6 +146,7 @@ def main():
             occupied_positions=occupied_positions,
 
             team_knowledge=team_knowledge_boards[explorer.team_id],
+            team_task_board=team_task_boards[explorer.team_id],
             team_storage=team_storages[explorer.team_id],
 
             decision_interval=1,

@@ -51,6 +51,16 @@ class TeamTaskBoard:
 
         return True
 
+    def get_resource_claims(self, current_time):
+        """Return a snapshot of active resource claims."""
+
+        self.cleanup_expired_claims(current_time)
+
+        return {
+            position: claim.copy()
+            for position, claim in self.resource_claims.items()
+        }
+
     def is_claimed_by_other(
         self,
         position,

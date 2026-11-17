@@ -14,19 +14,26 @@ class RuleBasedAgent:
         self.visited_positions = set()
 
     
+    
     def decide(self, observation):
-        """Choose an action based on the current observation."""
+        """Choose an action based on survival and team priorities."""
 
-        # Dead explorers cannot perform actions.
         if not observation["is_alive"]:
             return {"action": "none"}
 
+        # Update individual and shared memory.
         self.update_memory(observation)
 
         hunger = observation["hunger"]
         inventory = observation["inventory"]
+        current_position = observation["position"]
 
-        # Priority 1: Eat when hungry and carrying berries.
+        storage = observation.get("team_storage")
+
+        # --------------------------------------------------
+        # PRIORITY 1: Eat when hungry and carrying berries.
+        # --------------------------------------------------
+
         if hunger >= self.hunger_threshold:
 
             if inventory.get("berries", 0) > 0:
@@ -35,12 +42,19 @@ class RuleBasedAgent:
                     "amount": 1,
                 }
 
-            # Priority 2: Gather berries from nearby bushes.
+            # --------------------------------------------------
+            # PRIORITY 2: Gather nearby berries.
+            # --------------------------------------------------
+
             for resource in observation["nearby_resources"]:
 
                 if (
                     resource["resource_type"] == "berries"
                     and resource["quantity"] > 0
+                    and not self.is_resource_claimed_by_other(
+                        resource["position"],
+                        observation,
+                    )
                 ):
                     return {
                         "action": "gather",
@@ -48,7 +62,10 @@ class RuleBasedAgent:
                         "amount": 2,
                     }
 
-            # Priority 3: Loot berries from nearby caches.
+            # --------------------------------------------------
+            # PRIORITY 3: Loot nearby berries.
+            # --------------------------------------------------
+
             for cache in observation.get("nearby_loot_caches", []):
 
                 if cache["inventory"].get("berries", 0) > 0:
@@ -59,10 +76,42 @@ class RuleBasedAgent:
                         "amount": 2,
                     }
 
-            # Priority 4: Navigate towards a remembered berry bush.
-            current_position = observation["position"]
+            # --------------------------------------------------
+            # PRIORITY 4: Withdraw food from team storage.
+            # --------------------------------------------------
 
-            # Combine personal and shared discoveries.
+            if storage is not None:
+
+                storage_position = tuple(storage["position"])
+
+                storage_berries = storage["inventory"].get(
+                    "berries", 0
+                )
+
+                distance = (
+                    abs(current_position[0] - storage_position[0])
+                    + abs(current_position[1] - storage_position[1])
+                )
+
+                if storage_berries > 0:
+
+                    if distance <= 1:
+                        return {
+                            "action": "withdraw",
+                            "resource_type": "berries",
+                            "amount": 2,
+                        }
+
+                    return {
+                        "action": "navigate",
+                        "target_position": storage_position,
+                        "target_type": "storage",
+                    }
+
+            # --------------------------------------------------
+            # PRIORITY 5: Navigate towards remembered berries.
+            # --------------------------------------------------
+
             all_known_resources = {
                 **self.shared_resources,
                 **self.known_resources,
@@ -74,13 +123,15 @@ class RuleBasedAgent:
                 if (
                     resource["resource_type"] == "berries"
                     and resource["quantity"] > 0
+                    and not self.is_resource_claimed_by_other(
+                        resource["position"],
+                        observation,
+                    )
                 )
             ]
 
             if known_berries:
 
-                # Select the closest remembered berry bush
-                # using Manhattan distance.
                 target = min(
                     known_berries,
                     key=lambda resource: (
@@ -92,9 +143,61 @@ class RuleBasedAgent:
                 return {
                     "action": "navigate",
                     "target_position": target["position"],
+                    "target_type": "resource",
                 }
 
-        # Priority 5: Explore.
+        # --------------------------------------------------
+        # PRIORITY 6: Deposit surplus resources.
+        # --------------------------------------------------
+
+        if storage is not None:
+
+            storage_position = tuple(storage["position"])
+
+            distance = (
+                abs(current_position[0] - storage_position[0])
+                + abs(current_position[1] - storage_position[1])
+            )
+
+            # Wood and stone can be deposited completely.
+            wood_surplus = inventory.get("wood", 0)
+            stone_surplus = inventory.get("stone", 0)
+
+            # Keep one berry for personal consumption.
+            berry_surplus = max(
+                0,
+                inventory.get("berries", 0) - 1,
+            )
+
+            surplus = {
+                "wood": wood_surplus,
+                "stone": stone_surplus,
+                "berries": berry_surplus,
+            }
+
+            # Deposit one resource type at a time.
+            for resource_type, amount in surplus.items():
+
+                if amount <= 0:
+                    continue
+
+                if distance <= 1:
+                    return {
+                        "action": "deposit",
+                        "resource_type": resource_type,
+                        "amount": amount,
+                    }
+
+                return {
+                    "action": "navigate",
+                    "target_position": storage_position,
+                    "target_type": "storage",
+                }
+
+        # --------------------------------------------------
+        # PRIORITY 7: Explore.
+        # --------------------------------------------------
+
         return {
             "action": "explore",
         }
@@ -135,3 +238,16 @@ class RuleBasedAgent:
                 # A teammate has reported that this resource is depleted.
                 self.shared_resources.pop(position, None)
                 self.known_resources.pop(position, None)
+
+
+    def is_resource_claimed_by_other(self, position, observation):
+        """Check whether another explorer has claimed a resource."""
+
+        claims = observation.get("resource_claims", {})
+
+        claim = claims.get(tuple(position))
+
+        if claim is None:
+            return False
+
+        return claim["assigned_to"] != observation["name"]

@@ -107,6 +107,7 @@ class ExplorerController(sim.Component):
         loot_caches,
         occupied_positions,
         team_knowledge,
+        team_task_board,
         team_storage=None,
         decision_interval=1,
     ):
@@ -117,6 +118,8 @@ class ExplorerController(sim.Component):
         self.loot_caches = loot_caches
         self.occupied_positions = occupied_positions
         self.team_knowledge = team_knowledge
+        self.team_task_board = team_task_board
+        self.claimed_resource_position = None
         self.team_storage = team_storage
         self.decision_interval = decision_interval
         self.death_handled = False
@@ -132,6 +135,14 @@ class ExplorerController(sim.Component):
                 self.loot_caches,
             )
 
+            # 2. Include active resource reservations.
+            observation["resource_claims"] = (
+                self.team_task_board.get_resource_claims(
+                    self.env.now()
+                )
+            )
+
+            
             if self.team_storage is not None:
                 observation["team_storage"] = {
                     "position": (
@@ -154,12 +165,12 @@ class ExplorerController(sim.Component):
             observation["team_resources"] = (
                 self.team_knowledge.get_resources()
             )
-            if observation["team_resources"]:
-                print(
-                    f"[TEAM {self.explorer.team_id}] "
-                    f"{self.explorer.name} knows about: "
-                    f"{[(r['position'], r['discovered_by']) for r in observation['team_resources']]}"
-                )
+            # if observation["team_resources"]:
+            #     print(
+            #         f"[TEAM {self.explorer.team_id}] "
+            #         f"{self.explorer.name} knows about: "
+            #         f"{[(r['position'], r['discovered_by']) for r in observation['team_resources']]}"
+            #     )
 
             # 4. Ask the agent to decide.
             action = self.agent.decide(observation)
@@ -169,51 +180,71 @@ class ExplorerController(sim.Component):
             # Track how much simulation time the action consumes.
             action_duration = 0
 
-            # 5. Execute the selected action.
-            if action_type == "explore":
-                moved = self.movement.move_towards_unvisited(
-                    self,
-                    self.agent.visited_positions,
-                )
+            # Prepare the resource reservation.
+            claim_available = self.prepare_resource_claim(action)
 
-            elif action_type == "navigate":
-                moved = self.movement.move_towards(
-                    self,
-                    action["target_position"],
-                )
+            if not claim_available:
 
-            else:
-                result = execute_action(
-                    self.explorer,
-                    self.resources,
-                    self.loot_caches,
-                    action,
-                    team_storage=self.team_storage,
-                )
+                result = {
+                    "success": False,
+                    "message": "Resource is already claimed by another explorer.",
+                }
+
                 moved = None
 
-            # Handle movement results.
-            if moved is not None:
-                if moved:
-                    action_duration = (
-                        self.movement.move_duration
-                        + self.movement.pause_duration
+            else:
+                # 5. Execute the selected action.
+                if action_type == "explore":
+                    moved = self.movement.move_towards_unvisited(
+                        self,
+                        self.agent.visited_positions,
                     )
 
-                    result = {
-                        "success": True,
-                        "message": (
-                            f"Moved to "
-                            f"({self.explorer.row}, "
-                            f"{self.explorer.col})."
-                        ),
-                    }
-                else:
-                    result = {
-                        "success": False,
-                        "message": "No valid movement path available.",
-                    }
+                elif action_type == "navigate":
+                    moved = self.movement.move_towards(
+                        self,
+                        action["target_position"],
+                    )
 
+                else:
+                    result = execute_action(
+                        self.explorer,
+                        self.resources,
+                        self.loot_caches,
+                        action,
+                        team_storage=self.team_storage,
+                    )
+                    moved = None
+
+                # Handle movement results.
+                if moved is not None:
+                    if moved:
+                        action_duration = (
+                            self.movement.move_duration
+                            + self.movement.pause_duration
+                        )
+
+                        result = {
+                            "success": True,
+                            "message": (
+                                f"Moved to "
+                                f"({self.explorer.row}, "
+                                f"{self.explorer.col})."
+                            ),
+                        }
+                    else:
+                        result = {
+                            "success": False,
+                            "message": "No valid movement path available.",
+                        }
+
+                # Release a reservation if gathering fails.
+                if (
+                    action_type == "gather"
+                    and not result["success"]
+                ):
+                    self.release_resource_claim()
+                
             # 6. Log the decision and outcome.
             print(
                 f"t={self.env.now():.2f} | "
@@ -235,6 +266,72 @@ class ExplorerController(sim.Component):
         self.handle_death()
 
 
+    def release_resource_claim(self):
+        """Release the explorer's current resource reservation."""
+
+        if self.claimed_resource_position is None:
+            return
+
+        self.team_task_board.release_resource(
+            self.claimed_resource_position,
+            self.explorer.name,
+        )
+
+        self.claimed_resource_position = None
+
+
+    def prepare_resource_claim(self, action):
+        """Reserve a resource when the explorer decides to pursue it."""
+
+        action_type = action.get("action")
+
+        target_position = None
+
+        # Gathering requires a resource reservation.
+        if action_type == "gather":
+
+            target_position = action["target_position"]
+
+        # Navigating to a resource also requires a reservation.
+        elif (
+            action_type == "navigate"
+            and action.get("target_type") == "resource"
+        ):
+
+            target_position = action["target_position"]
+
+        # Other actions don't require a resource reservation.
+        if target_position is None:
+
+            self.release_resource_claim()
+
+            return True
+
+        target_position = tuple(target_position)
+
+        # Release an older claim if pursuing a different resource.
+        if (
+            self.claimed_resource_position is not None
+            and self.claimed_resource_position != target_position
+        ):
+            self.release_resource_claim()
+
+        # Try to claim or renew the resource.
+        success = self.team_task_board.claim_resource(
+            position=target_position,
+            explorer_name=self.explorer.name,
+            current_time=self.env.now(),
+            lease_duration=5,
+        )
+
+        if success:
+            self.claimed_resource_position = target_position
+        else:
+            self.claimed_resource_position = None
+
+        return success
+
+
     def handle_death(self):
         """Handle the consequences of an explorer's death."""
 
@@ -246,6 +343,10 @@ class ExplorerController(sim.Component):
             self.explorer.row,
             self.explorer.col,
         )
+
+        # Release claims
+        self.team_task_board.release_all(self.explorer.name)
+        self.claimed_resource_position = None
 
         # Release the occupied tile.
         self.occupied_positions.discard(position)
