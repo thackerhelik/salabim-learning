@@ -66,18 +66,6 @@ def main():
         for explorer in EXPLORERS
     }
 
-    # TEMPORARY DEATH TEST
-    ava = EXPLORERS[0]
-
-    ava.health = 10
-    ava.hunger = 100
-
-    ava.inventory = {
-        "wood": 5,
-        "stone": 2,
-        "berries": 3,
-    }
-
     # Create a movement component for each explorer
     for index, explorer in enumerate(EXPLORERS):
         # Create a movement helper for this explorer.
