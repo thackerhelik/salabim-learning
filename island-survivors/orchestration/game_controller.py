@@ -165,12 +165,12 @@ class ExplorerController(sim.Component):
             observation["team_resources"] = (
                 self.team_knowledge.get_resources()
             )
-            # if observation["team_resources"]:
-            #     print(
-            #         f"[TEAM {self.explorer.team_id}] "
-            #         f"{self.explorer.name} knows about: "
-            #         f"{[(r['position'], r['discovered_by']) for r in observation['team_resources']]}"
-            #     )
+            if observation["team_resources"]:
+                print(
+                    f"[TEAM {self.explorer.team_id}] "
+                    f"{self.explorer.name} knows about: "
+                    f"{[(r['kind'], r['resource_type'], r['position'], r['discovered_by']) for r in observation['team_resources']]}"
+                )
 
             # 4. Ask the agent to decide.
             action = self.agent.decide(observation)
