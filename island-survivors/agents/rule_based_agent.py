@@ -4,6 +4,9 @@ class RuleBasedAgent:
     def __init__(self, hunger_threshold=60):
         self.hunger_threshold = hunger_threshold
 
+        # Resources discovered by this explorer.
+        self.known_resources = {}
+
     
     def decide(self, observation):
         """Choose an action based on the current observation."""
@@ -11,6 +14,8 @@ class RuleBasedAgent:
         # Dead explorers cannot perform actions.
         if not observation["is_alive"]:
             return {"action": "none"}
+
+        self.update_memory(observation)
 
         hunger = observation["hunger"]
         inventory = observation["inventory"]
@@ -26,8 +31,10 @@ class RuleBasedAgent:
 
             # Priority 2: Gather berries from nearby bushes.
             for resource in observation["nearby_resources"]:
-
-                if resource["resource_type"] == "berries":
+                if (
+                    resource["resource_type"] == "berries"
+                    and resource["quantity"] > 0
+                ):
 
                     return {
                         "action": "gather",
@@ -51,3 +58,21 @@ class RuleBasedAgent:
         return {
             "action": "explore",
         }
+
+
+    def update_memory(self, observation):
+        """Update remembered resources using current observations."""
+
+        for resource in observation["nearby_resources"]:
+
+            position = tuple(resource["position"])
+
+            if resource["quantity"] > 0:
+
+                # Remember or update the resource.
+                self.known_resources[position] = resource.copy()
+
+            else:
+
+                # Forget depleted resources.
+                self.known_resources.pop(position, None)

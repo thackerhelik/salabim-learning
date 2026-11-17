@@ -321,7 +321,7 @@ def get_observation(explorer, resources, loot_caches=None):
         )
 
         # Consider resources on the current or adjacent tiles.
-        if distance <= 1 and resource.quantity > 0:
+        if distance <= 1:
 
             nearby_resources.append({
                 "kind": resource.kind,
