@@ -11,13 +11,26 @@ class LootCache:
     inventory: dict[str, int]
 
     def __post_init__(self):
-        """Keep a separate copy of the inventory."""
+        """Validate and copy the inventory."""
 
-        self.inventory = {
-            resource: quantity
-            for resource, quantity in self.inventory.items()
-            if quantity > 0
-        }
+        clean_inventory = {}
+
+        for resource, quantity in self.inventory.items():
+
+            if not isinstance(resource, str) or not resource:
+                raise ValueError(
+                    "Resource names must be non-empty strings."
+                )
+
+            if type(quantity) is not int or quantity < 0:
+                raise ValueError(
+                    f"Invalid quantity for {resource}: {quantity}"
+                )
+
+            if quantity > 0:
+                clean_inventory[resource] = quantity
+
+        self.inventory = clean_inventory
 
     def collect(self, resource_type: str, amount: int = 1) -> int:
         """Collect a quantity of a resource from the cache."""

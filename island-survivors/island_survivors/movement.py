@@ -437,9 +437,10 @@ class ExplorerMovement:
             self._active_move = None
 
             # Preserve the existing movement pause.
-            process.hold(self.pause_duration)
+            if self.pause_duration > 0:
+                process.hold(self.pause_duration)
 
-            return True
+            return self.explorer.is_alive
 
         except Exception:
 

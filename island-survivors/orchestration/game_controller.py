@@ -13,6 +13,7 @@ from environment import (
 from entities.loot_cache import LootCache
 
 from orchestration.event_logger import EventLogger
+from orchestration.action_validation import validate_action
 
 
 def execute_action(
@@ -244,30 +245,67 @@ class ExplorerController(sim.Component):
             )
 
             # 6. Ask the agent to decide.
-            action = self.agent.decide(observation)
+            raw_action = self.agent.decide(observation)
 
-            action_type = action.get("action")
-            reason = action.get("reason", "No reason provided.")
+            # Validate and normalize the returned action.
+            action, validation_error = validate_action(
+                raw_action=raw_action,
+                map_rows=len(self.movement.map_layout),
+                map_cols=len(self.movement.map_layout[0]),
+            )
 
-            # Record every decision, but only print it in debug mode.
-            decision_details = [
-                f"Reason: {reason}",
-            ]
+            if validation_error is not None:
 
-            if action.get("target_position") is not None:
-                decision_details.append(
-                    f"Target: {action['target_position']}"
+                # Record the rejected action.
+                raw_description = repr(raw_action)[:250]
+
+                self.event_logger.log(
+                    sim_time=self.env.now(),
+                    team_id=self.explorer.team_id,
+                    explorer_name=self.explorer.name,
+                    event="INVALID_ACTION",
+                    message="Agent returned an invalid action.",
+                    details=[
+                        f"Validation error: {validation_error}",
+                        f"Received: {raw_description}",
+                    ],
                 )
 
-            self.event_logger.log(
-                sim_time=self.env.now(),
-                team_id=self.explorer.team_id,
-                explorer_name=self.explorer.name,
-                event="DECISION",
-                message=f"Selected action: {action_type}",
-                details=decision_details,
-                debug_only=True,
-            )
+                # Use a harmless fallback so the existing controller
+                # can safely process this decision as a no-op.
+                action = {
+                    "action": "none",
+                    "reason": "Invalid action rejected.",
+                }
+
+                action_type = "none"
+                reason = "Invalid action rejected."
+
+            else:
+
+                action_type = action["action"]
+                reason = action["reason"]
+
+            if validation_error is None:
+                # Record every decision, but only print it in debug mode.
+                decision_details = [
+                    f"Reason: {reason}",
+                ]
+
+                if action.get("target_position") is not None:
+                    decision_details.append(
+                        f"Target: {action['target_position']}"
+                    )
+
+                self.event_logger.log(
+                    sim_time=self.env.now(),
+                    team_id=self.explorer.team_id,
+                    explorer_name=self.explorer.name,
+                    event="DECISION",
+                    message=f"Selected action: {action_type}",
+                    details=decision_details,
+                    debug_only=True,
+                )
 
             # Track how much simulation time the action consumes.
             action_duration = 0
@@ -298,7 +336,20 @@ class ExplorerController(sim.Component):
             else:
 
                 # 8. Execute the selected action.
-                if action_type == "explore":
+
+                if validation_error is not None:
+
+                    # Do not execute an invalid action.
+                    result = {
+                        "success": False,
+                        "message": (
+                            f"Invalid action rejected: {validation_error}"
+                        ),
+                    }
+
+                    moved = None
+
+                elif action_type == "explore":
 
                     moved = self.movement.move_towards_unvisited(
                         self,

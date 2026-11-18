@@ -240,12 +240,65 @@ class RuleBasedAgent:
         # PRIORITY 7: Explore.
         # --------------------------------------------------
 
+        if hunger >= self.hunger_threshold:
+
+            all_known_resources = {
+                **self.shared_resources,
+                **self.known_resources,
+            }
+
+            known_berries = [
+                resource
+                for resource in all_known_resources.values()
+                if (
+                    resource["resource_type"] == "berries"
+                    and resource["quantity"] > 0
+                )
+            ]
+
+            available_berries = [
+                resource
+                for resource in known_berries
+                if not self.is_resource_claimed_by_other(
+                    resource["position"],
+                    observation,
+                )
+            ]
+
+            if known_berries and not available_berries:
+
+                reason = (
+                    f"Hungry (hunger={hunger}), but all known "
+                    "berry resources are currently claimed "
+                    "by teammates. Exploring for alternatives."
+                )
+
+            elif not known_berries:
+
+                reason = (
+                    f"Hungry (hunger={hunger}), but no available "
+                    "berry resources are known. Exploring to "
+                    "search for food."
+                )
+
+            else:
+
+                reason = (
+                    f"Hungry (hunger={hunger}), but no immediate "
+                    "food action is currently possible. Exploring."
+                )
+
+        else:
+
+            reason = (
+                f"Hunger is {hunger}, below the threshold "
+                f"of {self.hunger_threshold}. Exploring to "
+                "discover new resources."
+            )
+
         return {
             "action": "explore",
-            "reason": (
-                "No immediate survival or storage task requires "
-                "attention. Exploring to discover new resources."
-            ),
+            "reason": reason,
         }
 
     
