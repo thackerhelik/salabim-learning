@@ -1,4 +1,3 @@
-from island_survivors.map_data import MAP_LAYOUT, FEATURES
 
 
 TERRAIN_COLORS = {
@@ -154,21 +153,23 @@ def draw_chest(env, x, y):
 
 def draw_map(
     env,
+    map_layout,
+    features,
     tile_size=40,
     origin_x=40,
     origin_y=50,
 ):
     """Draw terrain and objects using Salabim."""
 
-    rows = len(MAP_LAYOUT)
-    cols = len(MAP_LAYOUT[0])
+    rows = len(map_layout)
+    cols = len(map_layout[0])
 
     # Validate map dimensions
-    if any(len(row) != cols for row in MAP_LAYOUT):
+    if any(len(row) != cols for row in map_layout):
         raise ValueError("All map rows must have the same length.")
 
     # Draw terrain
-    for row_index, row in enumerate(MAP_LAYOUT):
+    for row_index, row in enumerate(map_layout):
 
         for col_index, tile in enumerate(row):
 
@@ -201,7 +202,7 @@ def draw_map(
         "chest": draw_chest,
     }
 
-    for kind, row, col in FEATURES:
+    for kind, row, col in features:
 
         if kind not in draw_functions:
             raise ValueError(f"Unknown feature type: {kind}")
@@ -209,7 +210,7 @@ def draw_map(
         if not (0 <= row < rows and 0 <= col < cols):
             raise ValueError(f"Feature outside map: {kind}, {row}, {col}")
 
-        if MAP_LAYOUT[row][col] != "g":
+        if map_layout[row][col] not in {"g", "s"}:
             raise ValueError(f"{kind} must be placed on grass.")
 
         x, y = get_tile_center(
@@ -222,18 +223,20 @@ def draw_map(
 def draw_explorers(
     env,
     explorers,
+    map_layout,
+    features,
     tile_size=40,
     origin_x=40,
     origin_y=50,
 ):
     """Draw all explorers on the map."""
 
-    num_rows = len(MAP_LAYOUT)
-    num_cols = len(MAP_LAYOUT[0])
+    num_rows = len(map_layout)
+    num_cols = len(map_layout[0])
 
     feature_positions = {
         (row, col)
-        for _, row, col in FEATURES
+        for _, row, col in features
     }
 
     occupied_positions = set()
@@ -250,7 +253,7 @@ def draw_explorers(
                 f"Explorer {explorer.name} is outside the map."
             )
 
-        if MAP_LAYOUT[row][col] != "g":
+        if map_layout[row][col] not in {"g", "s"}:
             raise ValueError(
                 f"Explorer {explorer.name} is not on grass."
             )

@@ -1,3 +1,4 @@
+
 import salabim as sim
 
 from island_survivors.map_renderer import (
@@ -6,7 +7,7 @@ from island_survivors.map_renderer import (
 )
 
 from island_survivors.explorers import create_explorers
-from island_survivors.map_data import MAP_LAYOUT, FEATURES
+from island_survivors.map_data import generate_scenario
 from island_survivors.movement import ExplorerMovement
 from island_survivors.survival import ExplorerNeeds
 from island_survivors.dashboard import SimulationDashboard
@@ -24,15 +25,36 @@ from orchestration.event_logger import EventLogger
 
 def main():
 
-    explorers = create_explorers()
+    # --------------------------------------------------
+    # 1. Generate the world.
+    # --------------------------------------------------
 
-    # Initialize simulation environment
+    scenario = generate_scenario(seed=42)
+
+    map_layout = scenario["map_layout"]
+    features = scenario["features"]
+    bases = scenario["bases"]
+
+    print(f"Starting scenario with seed {scenario['seed']}")
+
+    # Activate two diagonally opposite bases.
+    active_bases = {
+        1: bases[0],  # Northwest
+        2: bases[2],  # Southeast
+    }
+
+    # Create fresh workers for these teams.
+    explorers = create_explorers(active_bases)
+
+    # --------------------------------------------------
+    # 2. Initialize the simulation.
+    # --------------------------------------------------
+
     env = sim.Environment(
         trace=False,
         random_seed=42,
     )
 
-    # Configure animation window
     env.animation_parameters(
         animate=True,
         width=650,
@@ -43,99 +65,91 @@ def main():
         fps=30,
         show_fps=True,
 
-        # Centre the initial view around the island.
         x0=15,
         y0=-30,
         x1=665,
     )
 
-    # Map configuration
+    # Map configuration.
     map_options = {
-        "tile_size": 40,
-        "origin_x": 40,
-        "origin_y": 50,
+        "tile_size": 26,
+        "origin_x": 65,
+        "origin_y": 40,
     }
 
-    # Draw the island
-    draw_map(env, **map_options)
+    # Draw the generated map.
+    draw_map(
+        env,
+        map_layout,
+        features,
+        **map_options,
+    )
 
-    resources = create_resources()
+    # Create world resources.
+    resources = create_resources(features)
     loot_caches = {}
 
-    # Find the existing chest on the map.
-    chest_positions = [
-        (row, col)
-        for kind, row, col in FEATURES
-        if kind == "chest"
-    ]
+    # --------------------------------------------------
+    # 3. Create team infrastructure.
+    # --------------------------------------------------
 
-    if not chest_positions:
-        raise ValueError("No chest found on the map.")
-
-    storage_row, storage_col = chest_positions[0]
-
-    # Team task board
     team_task_boards = {
         team_id: TeamTaskBoard(team_id)
-        for team_id in {
-            explorer.team_id
-            for explorer in explorers
-        }
+        for team_id in active_bases
     }
 
-    # Create one storage inventory per team.
-    team_storages = {
-        team_id: TeamStorage(
+    team_knowledge_boards = {
+        team_id: TeamKnowledge(team_id)
+        for team_id in active_bases
+    }
+
+    team_storages = {}
+
+    for team_id, base in active_bases.items():
+
+        storage_row, storage_col = base["storage_position"]
+
+        team_storages[team_id] = TeamStorage(
             team_id=team_id,
             row=storage_row,
             col=storage_col,
         )
-        for team_id in {
-            explorer.team_id
-            for explorer in explorers
-        }
-    }
 
-    # Create one shared knowledge board per team.
-    team_knowledge_boards = {
-        team_id: TeamKnowledge(team_id)
-        for team_id in {
-            explorer.team_id
-            for explorer in explorers
-        }
-    }
+    # --------------------------------------------------
+    # 4. Draw explorers and initialize occupancy.
+    # --------------------------------------------------
 
-    # Draw explorers
     explorer_animations = draw_explorers(
         env,
         explorers,
+        map_layout,
+        features,
         **map_options,
     )
 
-
-    # Positions occupied by map features
     blocked_positions = {
         (row, col)
-        for _, row, col in FEATURES
+        for _, row, col in features
     }
 
-    # Initial positions occupied by explorers
     occupied_positions = {
         (explorer.row, explorer.col)
         for explorer in explorers
     }
 
-    # Create event logger
     event_logger = EventLogger(debug=True)
 
-    # Create a movement component for each explorer
+    # --------------------------------------------------
+    # 5. Create controllers and survival components.
+    # --------------------------------------------------
+
     for index, explorer in enumerate(explorers):
-        # Create a movement helper for this explorer.
+
         movement = ExplorerMovement(
             explorer=explorer,
             animation_objects=explorer_animations[explorer.name],
 
-            map_layout=MAP_LAYOUT,
+            map_layout=map_layout,
             blocked_positions=blocked_positions,
             occupied_positions=occupied_positions,
 
@@ -147,7 +161,6 @@ def main():
             seed=42 + index,
         )
 
-        # Create a decision-making controller.
         controller = ExplorerController(
             env=env,
             explorer=explorer,
@@ -166,7 +179,6 @@ def main():
             event_logger=event_logger,
         )
 
-        # Continue tracking hunger and health independently.
         ExplorerNeeds(
             env=env,
             explorer=explorer,
@@ -175,21 +187,21 @@ def main():
             death_handler=controller.handle_death,
         )
 
+    # --------------------------------------------------
+    # 6. Configure the dashboard.
+    # --------------------------------------------------
 
-    # Calculate map boundaries
     tile_size = map_options["tile_size"]
     origin_x = map_options["origin_x"]
     origin_y = map_options["origin_y"]
 
-    # (left, bottom, right, top) in world coordinates.
     map_bounds = (
         origin_x,
         origin_y,
-        origin_x + len(MAP_LAYOUT[0]) * tile_size,
-        origin_y + len(MAP_LAYOUT) * tile_size,
+        origin_x + len(map_layout[0]) * tile_size,
+        origin_y + len(map_layout) * tile_size,
     )
 
-    # Create the live simulation dashboard.
     dashboard = SimulationDashboard(
         env=env,
         explorers=explorers,
@@ -199,7 +211,10 @@ def main():
         map_bounds=map_bounds,
     )
 
-    # Keep the animation running.
+    # --------------------------------------------------
+    # 7. Run the simulation.
+    # --------------------------------------------------
+
     env.run(env.inf)
 
 

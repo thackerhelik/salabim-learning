@@ -1,5 +1,4 @@
 from entities.resource import Resource
-from island_survivors.map_data import FEATURES
 from entities.loot_cache import LootCache
 
 
@@ -20,18 +19,29 @@ RESOURCE_CONFIG = {
 }
 
 
-def create_resources():
-    """Create resource objects from the predefined map features."""
+def create_resources(features, resource_config=None):
+    """Create collectible resources from scenario features."""
+
+    if resource_config is None:
+        resource_config = RESOURCE_CONFIG
 
     resources = {}
 
-    for kind, row, col in FEATURES:
+    for kind, row, col in features:
 
-        # Skip features that cannot be collected
-        if kind not in RESOURCE_CONFIG:
+        # Skip decorative features.
+        if kind not in resource_config:
             continue
 
-        config = RESOURCE_CONFIG[kind]
+        position = (row, col)
+
+        # Do not silently overwrite another resource.
+        if position in resources:
+            raise ValueError(
+                f"Duplicate resource position: {position}"
+            )
+
+        config = resource_config[kind]
 
         resource = Resource(
             kind=kind,
@@ -41,8 +51,7 @@ def create_resources():
             quantity=config["quantity"],
         )
 
-        # Use grid coordinates as dictionary keys
-        resources[(row, col)] = resource
+        resources[position] = resource
 
     return resources
 
