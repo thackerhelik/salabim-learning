@@ -17,6 +17,7 @@ class SimulationDashboard:
         team_knowledge_boards,
         event_logger,
         map_bounds,
+        team_leaders=None,
     ):
         self.env = env
         self.root = env.root
@@ -25,6 +26,8 @@ class SimulationDashboard:
         self.team_knowledge_boards = team_knowledge_boards
         self.event_logger = event_logger
         self.map_bounds = map_bounds
+        self.team_leaders = team_leaders or {}
+
         self._pan_start = None
 
         self._refresh_job = None
@@ -618,10 +621,29 @@ class SimulationDashboard:
                 for resource in knowledge.known_resources.values()
             )
 
+        
+        leader = self.team_leaders.get(team_id)
+
+        if leader is not None:
+
+            leader_status = (
+                "ALIVE" if leader.is_alive else "DEAD"
+            )
+
+            leader_text = (
+                f"Leader: {leader_status} | "
+                f"HP: {leader.health} | "
+                f"Hunger: {leader.hunger}"
+            )
+
+        else:
+            leader_text = "Leader: unavailable"
+
         return (
             f"Team: {team_id} | Time: {self.env.now():.1f}\n"
-            f"Alive: {alive_count}/{len(team_explorers)}\n"
-            f"Known resource sites: {known_count}"
+            f"Alive: {alive_count}/{len(team_explorers)} | "
+            f"Known sites: {known_count}\n"
+            f"{leader_text}"
         )
 
     def selected_explorer_text(self):

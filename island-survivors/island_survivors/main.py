@@ -10,7 +10,11 @@ from island_survivors.map_renderer import (
 from island_survivors.explorers import create_explorers
 from island_survivors.map_data import generate_scenario
 from island_survivors.movement import ExplorerMovement
-from island_survivors.survival import ExplorerNeeds
+from island_survivors.survival import (
+    ExplorerNeeds,
+    LeaderNeeds,
+)
+from entities.leader import Leader
 from island_survivors.dashboard import SimulationDashboard
 
 from environment import create_resources
@@ -34,8 +38,6 @@ def main():
     seed_generator = random.Random(MASTER_SEED)
     MAP_SEED = seed_generator.getrandbits(32)
     SIM_SEED = seed_generator.getrandbits(32)
-
-    scenario = generate_scenario(seed=MAP_SEED)
 
     # --------------------------------------------------
     # 1. Generate the world.
@@ -127,6 +129,15 @@ def main():
             col=storage_col,
         )
 
+    # Create one stationary leader for each team.
+    team_leaders = {
+        team_id: Leader(
+            team_id=team_id,
+            name=f"Leader {team_id}",
+        )
+        for team_id in active_bases
+    }
+
     # --------------------------------------------------
     # 4. Draw explorers and initialize occupancy.
     # --------------------------------------------------
@@ -170,7 +181,7 @@ def main():
             move_duration=0.75,
             pause_duration=0.15,
 
-            seed=42 + index,
+            seed=SIM_SEED + index,
         )
 
         controller = ExplorerController(
@@ -199,6 +210,19 @@ def main():
             death_handler=controller.handle_death,
         )
 
+
+    # Start survival processes for team leaders.
+    for team_id, leader in team_leaders.items():
+
+        LeaderNeeds(
+            env=env,
+            leader=leader,
+            team_storage=team_storages[team_id],
+            update_interval=5,
+            event_logger=event_logger,
+        )
+
+
     # --------------------------------------------------
     # 6. Configure the dashboard.
     # --------------------------------------------------
@@ -221,6 +245,7 @@ def main():
         team_knowledge_boards=team_knowledge_boards,
         event_logger=event_logger,
         map_bounds=map_bounds,
+        team_leaders=team_leaders,
     )
 
     # --------------------------------------------------
