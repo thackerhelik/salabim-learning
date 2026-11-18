@@ -16,10 +16,13 @@ class RuleBasedAgent:
     
     
     def decide(self, observation):
-        """Choose an action based on survival and team priorities."""
+        """Choose an action and explain the reason behind it."""
 
         if not observation["is_alive"]:
-            return {"action": "none"}
+            return {
+                "action": "none",
+                "reason": "Explorer is no longer alive.",
+            }
 
         # Update individual and shared memory.
         self.update_memory(observation)
@@ -40,6 +43,11 @@ class RuleBasedAgent:
                 return {
                     "action": "eat",
                     "amount": 1,
+                    "reason": (
+                        f"Hunger is {hunger}, above the threshold "
+                        f"of {self.hunger_threshold}. "
+                        "Eating available berries."
+                    ),
                 }
 
             # --------------------------------------------------
@@ -60,6 +68,10 @@ class RuleBasedAgent:
                         "action": "gather",
                         "target_position": resource["position"],
                         "amount": 2,
+                        "reason": (
+                            "Hungry and an unclaimed berry resource "
+                            "is within gathering distance."
+                        ),
                     }
 
             # --------------------------------------------------
@@ -74,6 +86,10 @@ class RuleBasedAgent:
                         "target_position": cache["position"],
                         "resource_type": "berries",
                         "amount": 2,
+                        "reason": (
+                            "Hungry and a nearby loot cache "
+                            "contains berries."
+                        ),
                     }
 
             # --------------------------------------------------
@@ -100,12 +116,20 @@ class RuleBasedAgent:
                             "action": "withdraw",
                             "resource_type": "berries",
                             "amount": 2,
+                            "reason": (
+                                "Hungry and berries are available "
+                                "in team storage."
+                            ),
                         }
 
                     return {
                         "action": "navigate",
                         "target_position": storage_position,
                         "target_type": "storage",
+                        "reason": (
+                            "Hungry and team storage contains berries. "
+                            "Moving towards storage."
+                        ),
                     }
 
             # --------------------------------------------------
@@ -135,8 +159,14 @@ class RuleBasedAgent:
                 target = min(
                     known_berries,
                     key=lambda resource: (
-                        abs(current_position[0] - resource["position"][0])
-                        + abs(current_position[1] - resource["position"][1])
+                        abs(
+                            current_position[0]
+                            - resource["position"][0]
+                        )
+                        + abs(
+                            current_position[1]
+                            - resource["position"][1]
+                        )
                     ),
                 )
 
@@ -144,6 +174,10 @@ class RuleBasedAgent:
                     "action": "navigate",
                     "target_position": target["position"],
                     "target_type": "resource",
+                    "reason": (
+                        "Hungry and a known, unclaimed berry resource "
+                        "is available. Moving towards it."
+                    ),
                 }
 
         # --------------------------------------------------
@@ -186,12 +220,20 @@ class RuleBasedAgent:
                         "action": "deposit",
                         "resource_type": resource_type,
                         "amount": amount,
+                        "reason": (
+                            f"Carrying {amount} surplus {resource_type}. "
+                            "Depositing it for team use."
+                        ),
                     }
 
                 return {
                     "action": "navigate",
                     "target_position": storage_position,
                     "target_type": "storage",
+                    "reason": (
+                        f"Carrying surplus {resource_type}. "
+                        "Moving towards team storage."
+                    ),
                 }
 
         # --------------------------------------------------
@@ -200,6 +242,10 @@ class RuleBasedAgent:
 
         return {
             "action": "explore",
+            "reason": (
+                "No immediate survival or storage task requires "
+                "attention. Exploring to discover new resources."
+            ),
         }
 
     

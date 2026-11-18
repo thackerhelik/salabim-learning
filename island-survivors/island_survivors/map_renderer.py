@@ -23,6 +23,7 @@ def draw_tree(env, x, y):
         fillcolor="#79512F",
         linecolor="#63412A",
         layer=6,
+        screen_coordinates=True,
     )
 
     # Tree foliage
@@ -33,6 +34,7 @@ def draw_tree(env, x, y):
         fillcolor="#286642",
         linecolor="#19472D",
         layer=5,
+        screen_coordinates=True,
     )
 
     env.AnimateCircle(
@@ -42,6 +44,7 @@ def draw_tree(env, x, y):
         fillcolor="#438653",
         linecolor="#285A37",
         layer=4,
+        screen_coordinates=True,
     )
 
 
@@ -54,6 +57,7 @@ def draw_rock(env, x, y):
         fillcolor="#858F96",
         linecolor="#59636A",
         layer=5,
+        screen_coordinates=True,
     )
 
     env.AnimateCircle(
@@ -63,6 +67,7 @@ def draw_rock(env, x, y):
         fillcolor="#AAB3B7",
         linecolor="#626C73",
         layer=4,
+        screen_coordinates=True,
     )
 
 
@@ -76,6 +81,7 @@ def draw_berry(env, x, y):
         fillcolor="#286642",
         linecolor="#19472D",
         layer=5,
+        screen_coordinates=True,
     )
 
     # Berries
@@ -87,6 +93,7 @@ def draw_berry(env, x, y):
             fillcolor="#D94343",
             linecolor="#922626",
             layer=3,
+            screen_coordinates=True,
         )
 
 
@@ -100,6 +107,7 @@ def draw_campfire(env, x, y):
         fillcolor="#656565",
         linecolor="#333333",
         layer=5,
+        screen_coordinates=True,
     )
 
     # Flame
@@ -110,6 +118,7 @@ def draw_campfire(env, x, y):
         fillcolor="#F28C28",
         linecolor="#B84A17",
         layer=3,
+        screen_coordinates=True,
     )
 
     env.AnimateCircle(
@@ -119,6 +128,7 @@ def draw_campfire(env, x, y):
         fillcolor="#FFE36B",
         linecolor="#E69A24",
         layer=2,
+        screen_coordinates=True,
     )
 
 
@@ -130,6 +140,7 @@ def draw_chest(env, x, y):
         linecolor="#58391F",
         linewidth=2,
         layer=4,
+        screen_coordinates=True,
     )
 
     env.AnimateRectangle(
@@ -137,6 +148,7 @@ def draw_chest(env, x, y):
         fillcolor="#E6C75C",
         linecolor="#8A6B28",
         layer=2,
+        screen_coordinates=True,
     )
 
 
@@ -177,6 +189,7 @@ def draw_map(
                 linecolor="#527E62",
                 linewidth=1,
                 layer=10,
+                screen_coordinates=True,
             )
 
     # Draw objects on top of the terrain
@@ -282,6 +295,7 @@ def draw_explorers(
             textcolor="#FFFFFF",
             fontsize=11,
             layer=0,
+            screen_coordinates=True,
         )
 
         # Draw explorer name
@@ -293,6 +307,7 @@ def draw_explorers(
             textcolor="#FFFFFF",
             text_anchor="s",
             layer=-1,
+            screen_coordinates=True,
         )
 
         animation_objects[explorer.name] = {

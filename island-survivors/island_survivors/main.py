@@ -9,6 +9,7 @@ from island_survivors.explorers import EXPLORERS
 from island_survivors.map_data import MAP_LAYOUT, FEATURES
 from island_survivors.movement import ExplorerMovement
 from island_survivors.survival import ExplorerNeeds
+from island_survivors.dashboard import SimulationDashboard
 
 from environment import create_resources
 from agents.rule_based_agent import RuleBasedAgent
@@ -17,6 +18,8 @@ from orchestration.game_controller import ExplorerController
 from entities.team_knowledge import TeamKnowledge
 from entities.team_storage import TeamStorage
 from entities.team_task_board import TeamTaskBoard
+
+from orchestration.event_logger import EventLogger
 
 
 def main():
@@ -115,6 +118,9 @@ def main():
         for explorer in EXPLORERS
     }
 
+    # Create event logger
+    event_logger = EventLogger(debug=True)
+
     # Create a movement component for each explorer
     for index, explorer in enumerate(EXPLORERS):
         # Create a movement helper for this explorer.
@@ -150,6 +156,7 @@ def main():
             team_storage=team_storages[explorer.team_id],
 
             decision_interval=1,
+            event_logger=event_logger,
         )
 
         # Continue tracking hunger and health independently.
@@ -157,69 +164,19 @@ def main():
             env=env,
             explorer=explorer,
             update_interval=5,
+            event_logger=event_logger,
         )
 
-    # Side panel
-    env.AnimateRectangle(
-        spec=(665, 50, 900, 490),
-        fillcolor="#24485B",
-        linecolor="#52798A",
-        linewidth=2,
-        layer=12,
+    # Create the live simulation dashboard.
+    dashboard = SimulationDashboard(
+        env=env,
+        explorers=EXPLORERS,
+        team_storages=team_storages,
+        team_knowledge_boards=team_knowledge_boards,
+        event_logger=event_logger,
     )
 
-    env.AnimateText(
-        text="ISLAND SURVIVORS",
-        x=670,
-        y=465,
-        fontsize=22,
-        textcolor="#F4EBD0",
-    )
-
-    env.AnimateText(
-        text="YOUR OBJECTIVES",
-        x=670,
-        y=440,
-        fontsize=16,
-        textcolor="#E9C879",
-    )
-
-    env.AnimateText(
-        text=(
-            "1. Explore the island\n"
-            "2. Gather wood and food\n"
-            "3. Discover hidden treasure\n"
-            "4. Build a settlement\n"
-            "5. Survive!"
-        ),
-        x=670,
-        y=350,
-        fontsize=14,
-        textcolor="#FFFFFF",
-    )
-
-    env.AnimateText(
-        text="WORLD INFORMATION",
-        x=670,
-        y=310,
-        fontsize=16,
-        textcolor="#E9C879",
-    )
-
-    env.AnimateText(
-        text=(
-            "Map size: 15 x 11\n"
-            "Terrain: Island\n"
-            "Explorers: 4\n"
-            "Status: Preparing expedition"
-        ),
-        x=670,
-        y=230,
-        fontsize=14,
-        textcolor="#FFFFFF",
-    )
-
-    # Keep the animation running
+    # Keep the animation running.
     env.run(env.inf)
 
 

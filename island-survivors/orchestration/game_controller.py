@@ -12,6 +12,7 @@ from environment import (
 
 from entities.loot_cache import LootCache
 
+from orchestration.event_logger import EventLogger
 
 
 def execute_action(
@@ -110,6 +111,7 @@ class ExplorerController(sim.Component):
         team_task_board,
         team_storage=None,
         decision_interval=1,
+        event_logger=None,
     ):
         self.explorer = explorer
         self.agent = agent
@@ -123,6 +125,11 @@ class ExplorerController(sim.Component):
         self.team_storage = team_storage
         self.decision_interval = decision_interval
         self.death_handled = False
+        self.event_logger = (
+            event_logger
+            if event_logger is not None
+            else EventLogger()
+        )
 
     def process(self):
 
@@ -142,7 +149,7 @@ class ExplorerController(sim.Component):
                 )
             )
 
-            
+            # 3. Include team storage.
             if self.team_storage is not None:
                 observation["team_storage"] = {
                     "position": (
@@ -152,8 +159,21 @@ class ExplorerController(sim.Component):
                     "inventory": self.team_storage.inventory.copy(),
                 }
 
-            # 2. Publish discoveries (locally observed resources) to the team.
+            # 4. Publish locally observed resources to team knowledge.
             for resource in observation["nearby_resources"]:
+
+                position = tuple(resource["position"])
+                quantity = resource["quantity"]
+
+                previous_record = (
+                    self.team_knowledge.known_resources.get(position)
+                )
+
+                previous_quantity = (
+                    previous_record["quantity"]
+                    if previous_record is not None
+                    else None
+                )
 
                 self.team_knowledge.update_resource(
                     resource=resource,
@@ -161,52 +181,146 @@ class ExplorerController(sim.Component):
                     observed_at=self.env.now(),
                 )
 
-            # 3. Attach shared team knowledge to the observation.
+                # Log new discoveries and changes in resource quantity.
+                if previous_record is None and quantity > 0:
+
+                    self.event_logger.log(
+                        sim_time=self.env.now(),
+                        team_id=self.explorer.team_id,
+                        explorer_name=self.explorer.name,
+                        event="DISCOVERY",
+                        message=(
+                            f"Discovered {resource['kind']} "
+                            f"at {position}."
+                        ),
+                        details=[
+                            f"Resource: {resource['resource_type']}",
+                            f"Quantity: {quantity}",
+                        ],
+                    )
+
+                elif (
+                    previous_quantity is not None
+                    and previous_quantity > 0
+                    and quantity == 0
+                ):
+
+                    self.event_logger.log(
+                        sim_time=self.env.now(),
+                        team_id=self.explorer.team_id,
+                        explorer_name=self.explorer.name,
+                        event="RESOURCE_DEPLETED",
+                        message=f"Resource at {position} is depleted.",
+                        details=[
+                            f"Resource: {resource['resource_type']}"
+                        ],
+                    )
+
+                elif (
+                    previous_quantity is not None
+                    and previous_quantity != quantity
+                ):
+
+                    self.event_logger.log(
+                        sim_time=self.env.now(),
+                        team_id=self.explorer.team_id,
+                        explorer_name=self.explorer.name,
+                        event="RESOURCE_UPDATE",
+                        message=f"Resource quantity changed at {position}.",
+                        details=[
+                            f"Previous quantity: {previous_quantity}",
+                            f"Current quantity: {quantity}",
+                        ],
+                    )
+
+            # 5. Attach shared team knowledge to the observation.
             observation["team_resources"] = (
                 self.team_knowledge.get_resources()
             )
-            if observation["team_resources"]:
-                print(
-                    f"[TEAM {self.explorer.team_id}] "
-                    f"{self.explorer.name} knows about: "
-                    f"{[(r['kind'], r['resource_type'], r['position'], r['discovered_by']) for r in observation['team_resources']]}"
-                )
 
-            # 4. Ask the agent to decide.
+            # 6. Ask the agent to decide.
             action = self.agent.decide(observation)
 
             action_type = action.get("action")
+            reason = action.get("reason", "No reason provided.")
+
+            # Record every decision, but only print it in debug mode.
+            decision_details = [
+                f"Reason: {reason}",
+            ]
+
+            if action.get("target_position") is not None:
+                decision_details.append(
+                    f"Target: {action['target_position']}"
+                )
+
+            self.event_logger.log(
+                sim_time=self.env.now(),
+                team_id=self.explorer.team_id,
+                explorer_name=self.explorer.name,
+                event="DECISION",
+                message=f"Selected action: {action_type}",
+                details=decision_details,
+                debug_only=True,
+            )
 
             # Track how much simulation time the action consumes.
             action_duration = 0
 
-            # Prepare the resource reservation.
+            # Capture state before executing an interaction.
+            action_state_before = None
+
+            # Remember position before possible movement.
+            position_before = (
+                self.explorer.row,
+                self.explorer.col,
+            )
+
+            # 7. Prepare the resource reservation.
             claim_available = self.prepare_resource_claim(action)
 
             if not claim_available:
 
                 result = {
                     "success": False,
-                    "message": "Resource is already claimed by another explorer.",
+                    "message": (
+                        "Resource is already claimed by another explorer."
+                    ),
                 }
 
                 moved = None
 
             else:
-                # 5. Execute the selected action.
+
+                # 8. Execute the selected action.
                 if action_type == "explore":
+
                     moved = self.movement.move_towards_unvisited(
                         self,
                         self.agent.visited_positions,
                     )
 
                 elif action_type == "navigate":
+
                     moved = self.movement.move_towards(
                         self,
                         action["target_position"],
                     )
 
                 else:
+
+                    # Capture state before an inventory interaction.
+                    if action_type in {
+                        "gather",
+                        "eat",
+                        "loot",
+                        "deposit",
+                        "withdraw",
+                    }:
+                        action_state_before = (
+                            self.capture_action_state(action)
+                        )
+
                     result = execute_action(
                         self.explorer,
                         self.resources,
@@ -214,46 +328,81 @@ class ExplorerController(sim.Component):
                         action,
                         team_storage=self.team_storage,
                     )
+
                     moved = None
 
-                # Handle movement results.
+                # 9. Handle movement results.
                 if moved is not None:
+
                     if moved:
+
                         action_duration = (
                             self.movement.move_duration
                             + self.movement.pause_duration
                         )
 
+                        new_position = (
+                            self.explorer.row,
+                            self.explorer.col,
+                        )
+
                         result = {
                             "success": True,
-                            "message": (
-                                f"Moved to "
-                                f"({self.explorer.row}, "
-                                f"{self.explorer.col})."
-                            ),
+                            "message": f"Moved to {new_position}.",
                         }
+
+                        # Movement is useful for debugging but can be noisy.
+                        if new_position != position_before:
+
+                            self.event_logger.log(
+                                sim_time=self.env.now(),
+                                team_id=self.explorer.team_id,
+                                explorer_name=self.explorer.name,
+                                event="MOVE",
+                                message=(
+                                    f"Moved from {position_before} "
+                                    f"to {new_position}."
+                                ),
+                                details=[
+                                    f"Action: {action_type}",
+                                    f"Reason: {reason}",
+                                ],
+                                debug_only=True,
+                            )
+
                     else:
+
                         result = {
                             "success": False,
                             "message": "No valid movement path available.",
                         }
 
-                # Release a reservation if gathering fails.
-                if (
-                    action_type == "gather"
-                    and not result["success"]
-                ):
-                    self.release_resource_claim()
-                
-            # 6. Log the decision and outcome.
-            print(
-                f"t={self.env.now():.2f} | "
-                f"{self.explorer.name} | "
-                f"{action_type} | "
-                f"{result['message']}"
-            )
+                        self.event_logger.log(
+                            sim_time=self.env.now(),
+                            team_id=self.explorer.team_id,
+                            explorer_name=self.explorer.name,
+                            event="MOVEMENT_BLOCKED",
+                            message="Could not find a valid movement path.",
+                            details=[
+                                f"Action: {action_type}",
+                                f"Reason: {reason}",
+                            ],
+                            debug_only=True,
+                        )
 
-            # 7. Wait only for the remaining decision interval.
+            # 10. Log the outcome of inventory interactions.
+            if action_state_before is not None:
+                self.log_action_result(
+                    action,
+                    result,
+                    action_state_before,
+                )
+
+            # Release a reservation if gathering fails.
+            if action_type == "gather" and not result["success"]:
+                self.release_resource_claim()
+
+            # 11. Wait only for the remaining decision interval.
             remaining_time = max(
                 0,
                 self.decision_interval - action_duration,
@@ -266,33 +415,202 @@ class ExplorerController(sim.Component):
         self.handle_death()
 
 
+    def capture_action_state(self, action):
+        """Capture relevant state before an inventory interaction."""
+
+        action_type = action.get("action")
+
+        target_position = action.get("target_position")
+
+        if target_position is not None:
+            target_position = tuple(target_position)
+
+        resource = (
+            self.resources.get(target_position)
+            if target_position is not None
+            else None
+        )
+
+        resource_type = action.get("resource_type")
+
+        if action_type == "gather" and resource is not None:
+            resource_type = resource.resource_type
+
+        cache = (
+            self.loot_caches.get(target_position)
+            if target_position is not None
+            else None
+        )
+
+        return {
+            "target_position": target_position,
+            "resource_type": resource_type,
+            "inventory": self.explorer.inventory.copy(),
+            "hunger": self.explorer.hunger,
+            "health": self.explorer.health,
+            "resource_quantity": (
+                resource.quantity if resource is not None else None
+            ),
+            "cache_quantity": (
+                cache.inventory.get(resource_type, 0)
+                if cache is not None and resource_type is not None
+                else None
+            ),
+            "storage_quantity": (
+                self.team_storage.inventory.get(resource_type, 0)
+                if self.team_storage is not None
+                and resource_type is not None
+                else None
+            ),
+        }
+
+
+    def log_action_result(self, action, result, before):
+        """Log an action together with the resulting state changes."""
+
+        action_type = action.get("action")
+        resource_type = before["resource_type"]
+        position = before["target_position"]
+
+        success = result.get("success", False)
+
+        event_type = (
+            action_type.upper()
+            if success
+            else "ACTION_FAILED"
+        )
+
+        message = result.get(
+            "message",
+            "Action completed.",
+        )
+
+        details = []
+
+        if not success:
+            details.append(f"Attempted action: {action_type}")
+
+        if position is not None:
+            details.append(f"Target position: {position}")
+
+        if resource_type is not None:
+            details.append(f"Resource type: {resource_type}")
+
+        # Inventory changes.
+        for resource, old_quantity in before["inventory"].items():
+
+            new_quantity = self.explorer.inventory.get(resource, 0)
+
+            if old_quantity != new_quantity:
+                details.append(
+                    f"Inventory - {resource}: "
+                    f"{old_quantity} -> {new_quantity}"
+                )
+
+        # Resource depletion after gathering.
+        if action_type == "gather" and position is not None:
+
+            resource = self.resources.get(position)
+
+            new_quantity = (
+                resource.quantity
+                if resource is not None
+                else 0
+            )
+
+            if before["resource_quantity"] is not None:
+                details.append(
+                    f"Resource remaining: "
+                    f"{before['resource_quantity']} -> {new_quantity}"
+                )
+
+        # Loot cache changes.
+        if action_type == "loot" and position is not None:
+
+            cache = self.loot_caches.get(position)
+
+            new_quantity = (
+                cache.inventory.get(resource_type, 0)
+                if cache is not None
+                else 0
+            )
+
+            if before["cache_quantity"] is not None:
+                details.append(
+                    f"Cache {resource_type}: "
+                    f"{before['cache_quantity']} -> {new_quantity}"
+                )
+
+        # Team storage changes.
+        if (
+            action_type in {"deposit", "withdraw"}
+            and self.team_storage is not None
+        ):
+
+            new_quantity = self.team_storage.inventory.get(
+                resource_type, 0
+            )
+
+            details.append(
+                f"Team storage - {resource_type}: "
+                f"{before['storage_quantity']} -> {new_quantity}"
+            )
+
+        # Survival changes.
+        if before["hunger"] != self.explorer.hunger:
+            details.append(
+                f"Hunger: {before['hunger']} -> {self.explorer.hunger}"
+            )
+
+        if before["health"] != self.explorer.health:
+            details.append(
+                f"Health: {before['health']} -> {self.explorer.health}"
+            )
+
+        self.event_logger.log(
+            sim_time=self.env.now(),
+            team_id=self.explorer.team_id,
+            explorer_name=self.explorer.name,
+            event=event_type,
+            message=message,
+            details=details,
+        )
+        
+
     def release_resource_claim(self):
         """Release the explorer's current resource reservation."""
 
         if self.claimed_resource_position is None:
             return
 
+        position = self.claimed_resource_position
+
         self.team_task_board.release_resource(
-            self.claimed_resource_position,
+            position,
             self.explorer.name,
         )
 
         self.claimed_resource_position = None
+
+        self.event_logger.log(
+            sim_time=self.env.now(),
+            team_id=self.explorer.team_id,
+            explorer_name=self.explorer.name,
+            event="CLAIM_RELEASED",
+            message=f"Released resource claim at {position}.",
+        )
 
 
     def prepare_resource_claim(self, action):
         """Reserve a resource when the explorer decides to pursue it."""
 
         action_type = action.get("action")
-
         target_position = None
 
-        # Gathering requires a resource reservation.
         if action_type == "gather":
 
             target_position = action["target_position"]
 
-        # Navigating to a resource also requires a reservation.
         elif (
             action_type == "navigate"
             and action.get("target_type") == "resource"
@@ -309,10 +627,14 @@ class ExplorerController(sim.Component):
 
         target_position = tuple(target_position)
 
+        already_claimed = (
+            self.claimed_resource_position == target_position
+        )
+
         # Release an older claim if pursuing a different resource.
         if (
             self.claimed_resource_position is not None
-            and self.claimed_resource_position != target_position
+            and not already_claimed
         ):
             self.release_resource_claim()
 
@@ -325,9 +647,34 @@ class ExplorerController(sim.Component):
         )
 
         if success:
+
             self.claimed_resource_position = target_position
+
+            # Don't log repeated renewals.
+            if not already_claimed:
+
+                self.event_logger.log(
+                    sim_time=self.env.now(),
+                    team_id=self.explorer.team_id,
+                    explorer_name=self.explorer.name,
+                    event="CLAIM",
+                    message=f"Claimed resource at {target_position}.",
+                )
+
         else:
+
             self.claimed_resource_position = None
+
+            self.event_logger.log(
+                sim_time=self.env.now(),
+                team_id=self.explorer.team_id,
+                explorer_name=self.explorer.name,
+                event="CLAIM_DENIED",
+                message=(
+                    f"Could not claim resource at {target_position}. "
+                    "Another explorer owns the reservation."
+                ),
+            )
 
         return success
 
@@ -389,12 +736,24 @@ class ExplorerController(sim.Component):
         self.death_handled = True
 
         if inventory:
-            print(
-                f"{self.explorer.name} died at {position}. "
-                f"Loot cache created: {inventory}"
+            self.event_logger.log(
+                sim_time=self.env.now(),
+                team_id=self.explorer.team_id,
+                explorer_name=self.explorer.name,
+                event="DEATH",
+                message=f"Explorer died at {position}.",
+                details=[
+                    f"Loot cache created: {inventory}",
+                ],
             )
         else:
-            print(
-                f"{self.explorer.name} died at {position}. "
-                "No resources dropped."
+            self.event_logger.log(
+                sim_time=self.env.now(),
+                team_id=self.explorer.team_id,
+                explorer_name=self.explorer.name,
+                event="DEATH",
+                message=f"Explorer died at {position}.",
+                details=[
+                    "No resources were dropped.",
+                ],
             )
