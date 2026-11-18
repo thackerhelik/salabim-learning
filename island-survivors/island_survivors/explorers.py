@@ -25,10 +25,37 @@ class Explorer:
 
     is_alive: bool = True
 
-# Initial explorers
-EXPLORERS = [
-    Explorer(name="Ava", row=3, col=8, color="#E76F51", team_id=1),
-    Explorer(name="Bram", row=3, col=9, color="#457BCE", team_id=1),
-    Explorer(name="Cleo", row=7, col=4, color="#F30BF3", team_id=1),
-    Explorer(name="Dax", row=7, col=6, color="#9B72CF", team_id=1),
-]
+
+def create_explorers():
+    """Create a fresh set of explorers for a simulation run."""
+
+    return [
+        Explorer(
+            "Ava",
+            3,
+            8,
+            "#E76F51",
+            team_id=1,
+        ),
+        Explorer(
+            "Bram",
+            3,
+            9,
+            "#457BCE",
+            team_id=1,
+        ),
+        Explorer(
+            "Cleo",
+            7,
+            4,
+            "#E9C74B",
+            team_id=1,
+        ),
+        Explorer(
+            "Dax",
+            7,
+            6,
+            "#9B72CF",
+            team_id=1,
+        ),
+    ]

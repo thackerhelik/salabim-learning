@@ -34,6 +34,9 @@ class ExplorerMovement:
 
         self.rng = random.Random(seed)
 
+        # Information about a move that has not yet completed.
+        self._active_move = None
+
     def find_next_position(self):
         """Find a valid neighbouring tile."""
 
@@ -278,6 +281,31 @@ class ExplorerMovement:
         return None
 
 
+    def cancel_current_move(self):
+        """Cancel an unfinished move and release its destination."""
+
+        move = self._active_move
+
+        if move is None:
+            return False
+
+        # Mark the movement routine as cancelled.
+        move["cancelled"] = True
+
+        # Return the sprite to its last committed position.
+        move["position"]["x"] = move["start_x"]
+        move["position"]["y"] = move["start_y"]
+
+        # Release the reserved destination.
+        self.occupied_positions.discard(
+            move["destination"]
+        )
+
+        self._active_move = None
+
+        return True
+
+
     def move_one_step(self, process):
         """Move randomly by one neighbouring tile."""
 
@@ -312,15 +340,24 @@ class ExplorerMovement:
         )
 
     def _move_to_position(self, process, next_position):
-        """Animate movement to a specified neighbouring tile."""
+        """Animate movement, committing the move only after completion.
 
-        if next_position is None:
+        If the explorer dies during animation, the move is cancelled
+        and the explorer remains at its previous grid position.
+        """
+
+        # Do not start a move for a dead explorer.
+        if not self.explorer.is_alive or next_position is None:
             return False
 
         current_position = (
             self.explorer.row,
             self.explorer.col,
         )
+
+        # Recheck availability before reserving the destination.
+        if next_position in self.occupied_positions:
+            return False
 
         # Reserve the destination to prevent collisions.
         self.occupied_positions.add(next_position)
@@ -341,32 +378,73 @@ class ExplorerMovement:
         start_x = position["x"]
         start_y = position["y"]
 
-        # Smooth movement through interpolation.
+        # Keep a record that can also be accessed by death handling.
+        move = {
+            "destination": next_position,
+            "position": position,
+            "start_x": start_x,
+            "start_y": start_y,
+            "cancelled": False,
+        }
+
+        self._active_move = move
+
         animation_steps = 20
         step_duration = self.move_duration / animation_steps
 
-        for i in range(1, animation_steps + 1):
+        try:
 
-            fraction = i / animation_steps
+            for i in range(1, animation_steps + 1):
 
-            position["x"] = (
-                start_x + (target_x - start_x) * fraction
-            )
+                # Another component may have cancelled this move.
+                if move["cancelled"] or not self.explorer.is_alive:
 
-            position["y"] = (
-                start_y + (target_y - start_y) * fraction
-            )
+                    if self._active_move is move:
+                        self.cancel_current_move()
 
-            # Advance the calling Salabim component.
-            process.hold(step_duration)
+                    return False
 
-        # Update the explorer's actual grid position.
-        self.explorer.row = new_row
-        self.explorer.col = new_col
+                fraction = i / animation_steps
 
-        # Release the previous tile.
-        self.occupied_positions.remove(current_position)
+                position["x"] = (
+                    start_x + (target_x - start_x) * fraction
+                )
 
-        process.hold(self.pause_duration)
+                position["y"] = (
+                    start_y + (target_y - start_y) * fraction
+                )
 
-        return True
+                # Allow other Salabim components to execute.
+                process.hold(step_duration)
+
+                # Check immediately after every yield point.
+                if move["cancelled"] or not self.explorer.is_alive:
+
+                    if self._active_move is move:
+                        self.cancel_current_move()
+
+                    return False
+
+            # The movement animation is complete.
+            # Commit the new grid position.
+            self.explorer.row = new_row
+            self.explorer.col = new_col
+
+            # Release the previous tile.
+            self.occupied_positions.remove(current_position)
+
+            # The move is committed; it can no longer be rolled back.
+            self._active_move = None
+
+            # Preserve the existing movement pause.
+            process.hold(self.pause_duration)
+
+            return True
+
+        except Exception:
+
+            # Do not leave a destination reserved after an error.
+            if self._active_move is move:
+                self.cancel_current_move()
+
+            raise

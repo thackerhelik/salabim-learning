@@ -27,6 +27,9 @@ class SimulationDashboard:
         self.map_bounds = map_bounds
         self._pan_start = None
 
+        self._refresh_job = None
+        self._closed = False
+
         self.selected_explorer = (
             explorers[0] if explorers else None
         )
@@ -40,7 +43,8 @@ class SimulationDashboard:
 
         self.configure_window()
         self.build_widgets()
-        self.refresh()
+        self.update_view()
+        self.start_refresh()
 
     def configure_window(self):
         """Create a map canvas and a separate dashboard frame."""
@@ -517,7 +521,7 @@ class SimulationDashboard:
                 self.selected_explorer = explorer
                 break
 
-        self.refresh()
+        self.update_view()
 
     def team_overview_text(self):
         """Build the current team overview."""
@@ -663,28 +667,69 @@ class SimulationDashboard:
             for event in reversed(events)
         )
 
-    def refresh(self):
-        """Refresh dashboard values periodically."""
+    def update_view(self):
+        """Update dashboard widgets without scheduling another refresh."""
 
-        self.team_var.set(self.team_overview_text())
-        self.inspector_var.set(self.selected_explorer_text())
-        self.storage_var.set(self.storage_text())
-        self.events_var.set(self.recent_events_text())
+        if self._closed:
+            return
 
-        # Highlight the currently selected explorer.
-        for name, button in self.buttons.items():
-
-            if (
-                self.selected_explorer is not None
-                and name == self.selected_explorer.name
-            ):
-                button.configure(relief=tk.SUNKEN, bd=2)
-
-            else:
-                button.configure(relief=tk.RAISED, bd=1)
-
-        # Refresh every 250 milliseconds.
         try:
-            self.root.after(250, self.refresh)
+            self.team_var.set(self.team_overview_text())
+            self.inspector_var.set(self.selected_explorer_text())
+            self.storage_var.set(self.storage_text())
+            self.events_var.set(self.recent_events_text())
+
+            # Highlight the currently selected explorer.
+            for name, button in self.buttons.items():
+
+                if (
+                    self.selected_explorer is not None
+                    and name == self.selected_explorer.name
+                ):
+                    button.configure(relief=tk.SUNKEN, bd=2)
+
+                else:
+                    button.configure(relief=tk.RAISED, bd=1)
+
         except tk.TclError:
-            pass
+            self.stop_refresh()
+
+
+    def start_refresh(self):
+        """Start exactly one periodic refresh loop."""
+
+        if self._closed or self._refresh_job is not None:
+            return
+
+        self._refresh_job = self.root.after(
+            250,
+            self._refresh_tick,
+        )
+
+
+    def _refresh_tick(self):
+        """Perform one update and schedule the next one."""
+
+        self._refresh_job = None
+
+        if self._closed:
+            return
+
+        self.update_view()
+        self.start_refresh()
+
+
+    def stop_refresh(self):
+        """Stop the periodic dashboard update."""
+
+        self._closed = True
+
+        if self._refresh_job is not None:
+
+            try:
+                self.root.after_cancel(self._refresh_job)
+
+            except tk.TclError:
+                pass
+
+            self._refresh_job = None

@@ -20,16 +20,25 @@ class LootCache:
         }
 
     def collect(self, resource_type: str, amount: int = 1) -> int:
-        """Collect a resource and return the actual quantity collected."""
+        """Collect a quantity of a resource from the cache."""
 
-        if amount <= 0:
-            raise ValueError("Collection amount must be positive.")
+        if type(amount) is not int or amount <= 0:
+            raise ValueError(
+                "Collection amount must be a positive integer."
+            )
 
         available = self.inventory.get(resource_type, 0)
 
-        collected = min(amount, available)
+        if available <= 0:
+            return 0
 
-        self.inventory[resource_type] -= collected
+        collected = min(amount, available)
+        remaining = available - collected
+
+        if remaining > 0:
+            self.inventory[resource_type] = remaining
+        else:
+            self.inventory.pop(resource_type, None)
 
         return collected
 

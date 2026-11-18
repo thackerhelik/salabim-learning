@@ -11,10 +11,12 @@ class ExplorerNeeds(sim.Component):
         explorer,
         update_interval=5,
         event_logger=None,
+        death_handler=None,
     ):
         self.explorer = explorer
         self.update_interval = update_interval
         self.event_logger = event_logger
+        self.death_handler = death_handler
 
     def process(self):
 
@@ -26,14 +28,12 @@ class ExplorerNeeds(sim.Component):
             if not self.explorer.is_alive:
                 break
 
-            # Capture the previous state.
             previous_hunger = self.explorer.hunger
             previous_health = self.explorer.health
 
-            # Update hunger and health.
-            result = update_survival_needs(self.explorer)
+            # Apply the survival rules.
+            update_survival_needs(self.explorer)
 
-            # Capture the updated state.
             current_hunger = self.explorer.hunger
             current_health = self.explorer.health
 
@@ -55,7 +55,6 @@ class ExplorerNeeds(sim.Component):
             elif current_hunger >= 100:
                 details.append("Status: STARVING")
 
-            # Log survival changes using the shared logger.
             if self.event_logger is not None and details:
 
                 self.event_logger.log(
@@ -66,3 +65,11 @@ class ExplorerNeeds(sim.Component):
                     message="Survival needs updated.",
                     details=details,
                 )
+
+            # Handle death immediately after the lethal update.
+            if not self.explorer.is_alive:
+
+                if self.death_handler is not None:
+                    self.death_handler()
+
+                break

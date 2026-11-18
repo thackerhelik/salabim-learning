@@ -119,6 +119,7 @@ class ExplorerController(sim.Component):
         self.movement = movement
         self.loot_caches = loot_caches
         self.occupied_positions = occupied_positions
+        self.visited_positions = set()
         self.team_knowledge = team_knowledge
         self.team_task_board = team_task_board
         self.claimed_resource_position = None
@@ -140,6 +141,10 @@ class ExplorerController(sim.Component):
                 self.explorer,
                 self.resources,
                 self.loot_caches,
+            )
+
+            self.visited_positions.add(
+                tuple(observation["position"])
             )
 
             # 2. Include active resource reservations.
@@ -297,7 +302,7 @@ class ExplorerController(sim.Component):
 
                     moved = self.movement.move_towards_unvisited(
                         self,
-                        self.agent.visited_positions,
+                        self.visited_positions,
                     )
 
                 elif action_type == "navigate":
@@ -352,7 +357,7 @@ class ExplorerController(sim.Component):
                         }
 
                         # Movement is useful for debugging but can be noisy.
-                        if new_position != position_before:
+                        if new_position != position_before and self.explorer.is_alive:
 
                             self.event_logger.log(
                                 sim_time=self.env.now(),
@@ -372,23 +377,32 @@ class ExplorerController(sim.Component):
 
                     else:
 
-                        result = {
-                            "success": False,
-                            "message": "No valid movement path available.",
-                        }
+                        if self.explorer.is_alive:
 
-                        self.event_logger.log(
-                            sim_time=self.env.now(),
-                            team_id=self.explorer.team_id,
-                            explorer_name=self.explorer.name,
-                            event="MOVEMENT_BLOCKED",
-                            message="Could not find a valid movement path.",
-                            details=[
-                                f"Action: {action_type}",
-                                f"Reason: {reason}",
-                            ],
-                            debug_only=True,
-                        )
+                            result = {
+                                "success": False,
+                                "message": "No valid movement path available.",
+                            }
+
+                            self.event_logger.log(
+                                sim_time=self.env.now(),
+                                team_id=self.explorer.team_id,
+                                explorer_name=self.explorer.name,
+                                event="MOVEMENT_BLOCKED",
+                                message="Could not find a valid movement path.",
+                                details=[
+                                    f"Action: {action_type}",
+                                    f"Reason: {reason}",
+                                ],
+                                debug_only=True,
+                            )
+
+                        else:
+
+                            result = {
+                                "success": False,
+                                "message": "Movement interrupted because explorer died.",
+                            }
 
             # 10. Log the outcome of inventory interactions.
             if action_state_before is not None:
@@ -399,8 +413,20 @@ class ExplorerController(sim.Component):
                 )
 
             # Release a reservation if gathering fails.
-            if action_type == "gather" and not result["success"]:
+            is_resource_action = (
+                action_type == "gather"
+                or (
+                    action_type == "navigate"
+                    and action.get("target_type") == "resource"
+                )
+            )
+
+            if is_resource_action and not result["success"]:
                 self.release_resource_claim()
+
+            # Stop immediately if the explorer died during the action.
+            if not self.explorer.is_alive:
+                break
 
             # 11. Wait only for the remaining decision interval.
             remaining_time = max(
@@ -684,6 +710,9 @@ class ExplorerController(sim.Component):
 
         if self.death_handled:
             return
+
+        # Cancel any unfinished movement before recording the death position.
+        self.movement.cancel_current_move()
 
         # Record the explorer's last position.
         position = (

@@ -5,7 +5,7 @@ from island_survivors.map_renderer import (
     draw_explorers,
 )
 
-from island_survivors.explorers import EXPLORERS
+from island_survivors.explorers import create_explorers
 from island_survivors.map_data import MAP_LAYOUT, FEATURES
 from island_survivors.movement import ExplorerMovement
 from island_survivors.survival import ExplorerNeeds
@@ -23,6 +23,8 @@ from orchestration.event_logger import EventLogger
 
 
 def main():
+
+    explorers = create_explorers()
 
     # Initialize simulation environment
     env = sim.Environment(
@@ -77,7 +79,7 @@ def main():
         team_id: TeamTaskBoard(team_id)
         for team_id in {
             explorer.team_id
-            for explorer in EXPLORERS
+            for explorer in explorers
         }
     }
 
@@ -90,7 +92,7 @@ def main():
         )
         for team_id in {
             explorer.team_id
-            for explorer in EXPLORERS
+            for explorer in explorers
         }
     }
 
@@ -99,14 +101,14 @@ def main():
         team_id: TeamKnowledge(team_id)
         for team_id in {
             explorer.team_id
-            for explorer in EXPLORERS
+            for explorer in explorers
         }
     }
 
     # Draw explorers
     explorer_animations = draw_explorers(
         env,
-        EXPLORERS,
+        explorers,
         **map_options,
     )
 
@@ -120,14 +122,14 @@ def main():
     # Initial positions occupied by explorers
     occupied_positions = {
         (explorer.row, explorer.col)
-        for explorer in EXPLORERS
+        for explorer in explorers
     }
 
     # Create event logger
     event_logger = EventLogger(debug=True)
 
     # Create a movement component for each explorer
-    for index, explorer in enumerate(EXPLORERS):
+    for index, explorer in enumerate(explorers):
         # Create a movement helper for this explorer.
         movement = ExplorerMovement(
             explorer=explorer,
@@ -146,7 +148,7 @@ def main():
         )
 
         # Create a decision-making controller.
-        ExplorerController(
+        controller = ExplorerController(
             env=env,
             explorer=explorer,
             agent=RuleBasedAgent(),
@@ -170,6 +172,7 @@ def main():
             explorer=explorer,
             update_interval=5,
             event_logger=event_logger,
+            death_handler=controller.handle_death,
         )
 
 
@@ -189,7 +192,7 @@ def main():
     # Create the live simulation dashboard.
     dashboard = SimulationDashboard(
         env=env,
-        explorers=EXPLORERS,
+        explorers=explorers,
         team_storages=team_storages,
         team_knowledge_boards=team_knowledge_boards,
         event_logger=event_logger,
