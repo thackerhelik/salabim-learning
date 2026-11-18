@@ -16,6 +16,7 @@ class SimulationDashboard:
         team_storages,
         team_knowledge_boards,
         event_logger,
+        map_bounds,
     ):
         self.env = env
         self.root = env.root
@@ -23,6 +24,8 @@ class SimulationDashboard:
         self.team_storages = team_storages
         self.team_knowledge_boards = team_knowledge_boards
         self.event_logger = event_logger
+        self.map_bounds = map_bounds
+        self._pan_start = None
 
         self.selected_explorer = (
             explorers[0] if explorers else None
@@ -96,8 +99,7 @@ class SimulationDashboard:
         )
         self.root.resizable(False, False)
 
-        # Remove Salabim's window-wide mouse bindings.
-        # We will attach them only to the map canvas.
+        # Remove Salabim's window-wide pan and zoom handlers.
         for sequence in (
             "<ButtonPress-1>",
             "<B1-Motion>",
@@ -107,87 +109,233 @@ class SimulationDashboard:
         ):
             self.root.unbind(sequence)
 
-        # Panning only works when interacting with the map.
+        # Handle panning only on the map canvas.
         self.canvas.bind(
             "<ButtonPress-1>",
-            self.env.start_pan,
+            self.start_map_pan,
         )
 
         self.canvas.bind(
             "<B1-Motion>",
-            self.env.do_pan,
+            self.do_map_pan,
         )
 
         self.canvas.bind(
             "<ButtonRelease-1>",
-            self.env.end_pan,
+            self.end_map_pan,
         )
 
-        # Zoom support.
+        # Mouse-wheel zoom.
         if sys.platform.startswith("linux"):
 
-            # Linux mouse wheels generally emit Button-4/5 events.
             self.canvas.bind(
                 "<Button-4>",
-                lambda event: self.zoom_linux(event, zoom_in=True),
+                lambda event: self.zoom_at_center(True),
             )
 
             self.canvas.bind(
                 "<Button-5>",
-                lambda event: self.zoom_linux(event, zoom_in=False),
+                lambda event: self.zoom_at_center(False),
             )
 
-            # Also support Linux environments that emit MouseWheel.
             self.canvas.bind(
                 "<MouseWheel>",
-                self.on_linux_mousewheel,
+                self.on_mousewheel,
             )
 
         else:
 
-            # Windows and macOS.
             self.canvas.bind(
                 "<MouseWheel>",
-                self.env.on_mousewheel,
+                self.on_mousewheel,
             )
 
-    def zoom_linux(self, event, zoom_in):
-        """Handle Linux mouse-wheel zoom around the cursor."""
 
-        # Uses Salabim's current 2D zoom state.
+    def clamp_camera_origin(
+        self,
+        x0,
+        y0,
+        view_width,
+        view_height,
+    ):
+        """Keep the island inside the map viewport."""
+
+        map_left, map_bottom, map_right, map_top = self.map_bounds
+
+        # Horizontal limits.
+        min_x0 = min(
+            map_left,
+            map_right - view_width,
+        )
+
+        max_x0 = max(
+            map_left,
+            map_right - view_width,
+        )
+
+        # Vertical limits.
+        min_y0 = min(
+            map_bottom,
+            map_top - view_height,
+        )
+
+        max_y0 = max(
+            map_bottom,
+            map_top - view_height,
+        )
+
+        x0 = max(min_x0, min(x0, max_x0))
+        y0 = max(min_y0, min(y0, max_y0))
+
+        return x0, y0
+
+
+    def start_map_pan(self, event):
+        """Remember the camera position when dragging starts."""
+
         env = self.env
 
-        x_mouse = event.x
-        y_mouse = env.height() - event.y
+        scale = env._scale
 
-        x = (x_mouse / env._scale) + env._x0z
-        y = (y_mouse / env._scale) + env._y0z
+        if scale <= 0:
+            scale = env._scalez
 
-        if zoom_in:
-            zoom_factor = 1 / env._zoom_factor
-        else:
-            zoom_factor = env._zoom_factor
+        self._pan_start = (
+            event.x,
+            event.y,
+            env._x0z,
+            env._y0z,
+            env._x1z - env._x0z,
+            env._y1z - env._y0z,
+            scale,
+        )
 
-        env._scalez /= zoom_factor
-
-        env._x0z = x - (x - env._x0z) * zoom_factor
-        env._y0z = y - (y - env._y0z) * zoom_factor
-
-        env._x1z = x - (x - env._x1z) * zoom_factor
-        env._y1z = y - (y - env._y1z) * zoom_factor
+        self.canvas.configure(cursor="fleur")
 
         return "break"
 
-    def on_linux_mousewheel(self, event):
-        """Handle Linux MouseWheel events when available."""
 
-        if event.delta == 0:
+    def do_map_pan(self, event):
+        """Pan the map while respecting its boundaries."""
+
+        if self._pan_start is None:
             return "break"
 
-        return self.zoom_linux(
-            event,
-            zoom_in=event.delta > 0,
+        env = self.env
+
+        (
+            start_x,
+            start_y,
+            start_x0,
+            start_y0,
+            view_width,
+            view_height,
+            scale,
+        ) = self._pan_start
+
+        # Convert mouse movement from pixels to world coordinates.
+        dx = -(event.x - start_x) / scale
+        dy = (event.y - start_y) / scale
+
+        new_x0 = start_x0 + dx
+        new_y0 = start_y0 + dy
+
+        # Prevent the map from being dragged out of view.
+        new_x0, new_y0 = self.clamp_camera_origin(
+            new_x0,
+            new_y0,
+            view_width,
+            view_height,
         )
+
+        env._x0z = new_x0
+        env._y0z = new_y0
+
+        env._x1z = new_x0 + view_width
+        env._y1z = new_y0 + view_height
+
+        return "break"
+
+
+    def end_map_pan(self, event):
+        """Finish dragging the map."""
+
+        self._pan_start = None
+
+        self.canvas.configure(cursor="")
+
+        return "break"
+
+
+    def zoom_at_center(self, zoom_in):
+        """Zoom around the centre of the map viewport."""
+
+        env = self.env
+
+        # Same zoom factor used by Salabim.
+        if zoom_in:
+            factor = 1 / env._zoom_factor
+        else:
+            factor = env._zoom_factor
+
+        # Current visible world dimensions.
+        view_width = env._x1z - env._x0z
+        view_height = env._y1z - env._y0z
+
+        # Keep the world coordinate at the viewport centre fixed.
+        center_x = (env._x0z + env._x1z) / 2
+        center_y = (env._y0z + env._y1z) / 2
+
+        # Calculate new visible dimensions.
+        new_width = view_width * factor
+        new_height = view_height * factor
+
+        # Update Salabim's zoom scale.
+        env._scalez /= factor
+
+        # Calculate the new camera origin.
+        new_x0 = center_x - new_width / 2
+        new_y0 = center_y - new_height / 2
+
+        # Apply the island boundaries.
+        new_x0, new_y0 = self.clamp_camera_origin(
+            new_x0,
+            new_y0,
+            new_width,
+            new_height,
+        )
+
+        env._x0z = new_x0
+        env._y0z = new_y0
+
+        env._x1z = new_x0 + new_width
+        env._y1z = new_y0 + new_height
+
+        return "break"
+
+
+    def on_mousewheel(self, event):
+        """Handle mouse-wheel zoom on Windows, macOS and Linux."""
+
+        delta = getattr(event, "delta", 0)
+
+        if delta == 0:
+            return "break"
+
+        # Normalise wheel movement into zoom steps.
+        steps = int(abs(delta) / 120)
+
+        # Handle touchpads that report smaller deltas.
+        if steps == 0:
+            steps = 1
+
+        zoom_in = delta > 0
+
+        for _ in range(steps):
+            self.zoom_at_center(zoom_in)
+
+        return "break"
+
 
     def build_widgets(self):
         """Construct the fixed dashboard interface."""

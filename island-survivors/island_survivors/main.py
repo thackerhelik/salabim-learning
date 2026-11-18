@@ -40,9 +40,11 @@ def main():
         speed=1,
         fps=30,
         show_fps=True,
-        x0=0,
-        y0=0,
-        x1=650,
+
+        # Centre the initial view around the island.
+        x0=15,
+        y0=-30,
+        x1=665,
     )
 
     # Map configuration
@@ -170,6 +172,20 @@ def main():
             event_logger=event_logger,
         )
 
+
+    # Calculate map boundaries
+    tile_size = map_options["tile_size"]
+    origin_x = map_options["origin_x"]
+    origin_y = map_options["origin_y"]
+
+    # (left, bottom, right, top) in world coordinates.
+    map_bounds = (
+        origin_x,
+        origin_y,
+        origin_x + len(MAP_LAYOUT[0]) * tile_size,
+        origin_y + len(MAP_LAYOUT) * tile_size,
+    )
+
     # Create the live simulation dashboard.
     dashboard = SimulationDashboard(
         env=env,
@@ -177,6 +193,7 @@ def main():
         team_storages=team_storages,
         team_knowledge_boards=team_knowledge_boards,
         event_logger=event_logger,
+        map_bounds=map_bounds,
     )
 
     # Keep the animation running.
