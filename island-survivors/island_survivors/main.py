@@ -1,5 +1,6 @@
 
 import salabim as sim
+import random
 
 from island_survivors.map_renderer import (
     draw_map,
@@ -23,13 +24,24 @@ from entities.team_task_board import TeamTaskBoard
 from orchestration.event_logger import EventLogger
 
 
+MASTER_SEED = 456
+
+
 def main():
+
+    
+    # Derive separate, reproducible seeds
+    seed_generator = random.Random(MASTER_SEED)
+    MAP_SEED = seed_generator.getrandbits(32)
+    SIM_SEED = seed_generator.getrandbits(32)
+
+    scenario = generate_scenario(seed=MAP_SEED)
 
     # --------------------------------------------------
     # 1. Generate the world.
     # --------------------------------------------------
 
-    scenario = generate_scenario(seed=42)
+    scenario = generate_scenario(seed=MAP_SEED)
 
     map_layout = scenario["map_layout"]
     features = scenario["features"]
@@ -52,7 +64,7 @@ def main():
 
     env = sim.Environment(
         trace=False,
-        random_seed=42,
+        random_seed=SIM_SEED,
     )
 
     env.animation_parameters(
