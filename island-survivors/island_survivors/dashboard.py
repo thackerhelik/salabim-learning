@@ -474,6 +474,70 @@ class SimulationDashboard:
         self.add_divider(content)
 
         # --------------------------------------------------
+        # SHARED KNOWLEDGE
+        # --------------------------------------------------
+
+        self.add_heading(content, "SHARED KNOWLEDGE")
+
+        self.knowledge_summary_var = tk.StringVar()
+
+        tk.Label(
+            content,
+            textvariable=self.knowledge_summary_var,
+            font=("TkFixedFont", 8),
+            fg="#FFFFFF",
+            bg="#24485B",
+            justify=tk.LEFT,
+            anchor="w",
+        ).pack(anchor="w", pady=(0, 3))
+
+        # Scrollable list of known resources.
+        knowledge_frame = tk.Frame(
+            content,
+            bg="#24485B",
+        )
+
+        knowledge_frame.pack(
+            fill=tk.X,
+            pady=(0, 2),
+        )
+
+        self.knowledge_list = tk.Listbox(
+            knowledge_frame,
+            height=4,
+            font=("TkFixedFont", 8),
+            fg="#FFFFFF",
+            bg="#1B3948",
+            selectbackground="#52798A",
+            activestyle="none",
+            relief=tk.FLAT,
+            highlightthickness=0,
+        )
+
+        knowledge_scrollbar = tk.Scrollbar(
+            knowledge_frame,
+            orient=tk.VERTICAL,
+            command=self.knowledge_list.yview,
+        )
+
+        self.knowledge_list.configure(
+            yscrollcommand=knowledge_scrollbar.set,
+        )
+
+        self.knowledge_list.pack(
+            side=tk.LEFT,
+            fill=tk.BOTH,
+            expand=True,
+        )
+
+        knowledge_scrollbar.pack(
+            side=tk.RIGHT,
+            fill=tk.Y,
+        )
+
+        self.add_divider(content)
+
+        # --------------------------------------------------
         # RECENT EVENTS
         # --------------------------------------------------
 
@@ -644,6 +708,76 @@ class SimulationDashboard:
             f"Berries: {inventory.get('berries', 0)}"
         )
 
+
+    def knowledge_panel_data(self):
+        """Build the selected team's shared knowledge information."""
+
+        explorer = self.selected_explorer
+
+        if explorer is None:
+            return "No team selected.", []
+
+        team_id = explorer.team_id
+
+        knowledge = self.team_knowledge_boards.get(team_id)
+
+        if knowledge is None:
+            return f"Team {team_id}: knowledge unavailable.", []
+
+        # Get a snapshot through the public TeamKnowledge API.
+        resources = knowledge.get_resources()
+
+        # Sort resources by their map position.
+        resources.sort(
+            key=lambda resource: resource["position"]
+        )
+
+        if not resources:
+            return (
+                f"Team {team_id} | 0 known sites",
+                ["No shared discoveries yet."],
+            )
+
+        rows = []
+
+        for resource in resources:
+
+            row, col = resource["position"]
+
+            resource_type = (
+                resource.get("resource_type")
+                or resource.get("kind", "resource")
+            )
+
+            quantity = resource.get("quantity", 0)
+
+            observer = resource.get(
+                "last_observed_by",
+                "?",
+            )
+
+            observed_at = resource.get(
+                "last_observed_at",
+            )
+
+            time_text = ""
+
+            if isinstance(observed_at, (int, float)):
+                time_text = f"T{observed_at:.1f}"
+
+            rows.append(
+                f"{resource_type} ({row},{col}) "
+                f"q={quantity} | {observer} {time_text}"
+            )
+
+        summary = (
+            f"Team {team_id} | "
+            f"{len(resources)} known resource sites"
+        )
+
+        return summary, rows
+    
+
     def recent_events_text(self):
         """Build the latest meaningful team events."""
 
@@ -678,6 +812,42 @@ class SimulationDashboard:
             self.inspector_var.set(self.selected_explorer_text())
             self.storage_var.set(self.storage_text())
             self.events_var.set(self.recent_events_text())
+
+            # Update shared knowledge.
+            knowledge_summary, knowledge_rows = (
+                self.knowledge_panel_data()
+            )
+
+            self.knowledge_summary_var.set(
+                knowledge_summary
+            )
+
+            # Only redraw the list when its contents change.
+            current_rows = self.knowledge_list.get(
+                0,
+                tk.END,
+            )
+
+            if current_rows != tuple(knowledge_rows):
+
+                previous_scroll_position = (
+                    self.knowledge_list.yview()[0]
+                )
+
+                self.knowledge_list.delete(
+                    0,
+                    tk.END,
+                )
+
+                for row in knowledge_rows:
+                    self.knowledge_list.insert(
+                        tk.END,
+                        row,
+                    )
+
+                self.knowledge_list.yview_moveto(
+                    previous_scroll_position
+                )
 
             # Highlight the currently selected explorer.
             for name, button in self.buttons.items():

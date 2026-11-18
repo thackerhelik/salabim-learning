@@ -24,7 +24,7 @@ from entities.team_task_board import TeamTaskBoard
 from orchestration.event_logger import EventLogger
 
 
-MASTER_SEED = 456
+MASTER_SEED = 123
 
 
 def main():
