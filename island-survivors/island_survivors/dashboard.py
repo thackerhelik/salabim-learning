@@ -1,5 +1,13 @@
+import sys
+import tkinter as tk
+
+
 class SimulationDashboard:
-    """Displays live team and explorer information."""
+    """Displays live simulation information in a fixed sidebar."""
+
+    MAP_WIDTH = 650
+    PANEL_WIDTH = 350
+    WINDOW_HEIGHT = 600
 
     def __init__(
         self,
@@ -10,6 +18,7 @@ class SimulationDashboard:
         event_logger,
     ):
         self.env = env
+        self.root = env.root
         self.explorers = explorers
         self.team_storages = team_storages
         self.team_knowledge_boards = team_knowledge_boards
@@ -19,7 +28,338 @@ class SimulationDashboard:
             explorers[0] if explorers else None
         )
 
-        self.draw()
+        self.buttons = {}
+
+        if self.root is None:
+            raise RuntimeError(
+                "Salabim animation window has not been initialized."
+            )
+
+        self.configure_window()
+        self.build_widgets()
+        self.refresh()
+
+    def configure_window(self):
+        """Create a map canvas and a separate dashboard frame."""
+
+        # Find the Canvas created by Salabim.
+        canvases = [
+            widget
+            for widget in self.root.winfo_children()
+            if isinstance(widget, tk.Canvas)
+        ]
+
+        if not canvases:
+            raise RuntimeError(
+                "Could not find Salabim's animation Canvas."
+            )
+
+        self.canvas = canvases[0]
+
+        # Reposition the canvas on the left.
+        self.canvas.pack_forget()
+
+        self.canvas.configure(
+            width=self.MAP_WIDTH,
+            height=self.WINDOW_HEIGHT,
+            highlightthickness=0,
+        )
+
+        self.canvas.pack(
+            side=tk.LEFT,
+            anchor="nw",
+            fill=tk.NONE,
+            expand=False,
+        )
+
+        # Create a separate, fixed-width sidebar.
+        self.panel = tk.Frame(
+            self.root,
+            width=self.PANEL_WIDTH,
+            height=self.WINDOW_HEIGHT,
+            bg="#24485B",
+        )
+
+        self.panel.pack(
+            side=tk.RIGHT,
+            fill=tk.Y,
+            expand=False,
+        )
+
+        self.panel.pack_propagate(False)
+
+        # Set the combined window size.
+        self.root.update_idletasks()
+        self.root.geometry(
+            f"{self.MAP_WIDTH + self.PANEL_WIDTH}"
+            f"x{self.WINDOW_HEIGHT}"
+        )
+        self.root.resizable(False, False)
+
+        # Remove Salabim's window-wide mouse bindings.
+        # We will attach them only to the map canvas.
+        for sequence in (
+            "<ButtonPress-1>",
+            "<B1-Motion>",
+            "<ButtonRelease-1>",
+            "<MouseWheel>",
+            "<TouchpadScroll>",
+        ):
+            self.root.unbind(sequence)
+
+        # Panning only works when interacting with the map.
+        self.canvas.bind(
+            "<ButtonPress-1>",
+            self.env.start_pan,
+        )
+
+        self.canvas.bind(
+            "<B1-Motion>",
+            self.env.do_pan,
+        )
+
+        self.canvas.bind(
+            "<ButtonRelease-1>",
+            self.env.end_pan,
+        )
+
+        # Zoom support.
+        if sys.platform.startswith("linux"):
+
+            # Linux mouse wheels generally emit Button-4/5 events.
+            self.canvas.bind(
+                "<Button-4>",
+                lambda event: self.zoom_linux(event, zoom_in=True),
+            )
+
+            self.canvas.bind(
+                "<Button-5>",
+                lambda event: self.zoom_linux(event, zoom_in=False),
+            )
+
+            # Also support Linux environments that emit MouseWheel.
+            self.canvas.bind(
+                "<MouseWheel>",
+                self.on_linux_mousewheel,
+            )
+
+        else:
+
+            # Windows and macOS.
+            self.canvas.bind(
+                "<MouseWheel>",
+                self.env.on_mousewheel,
+            )
+
+    def zoom_linux(self, event, zoom_in):
+        """Handle Linux mouse-wheel zoom around the cursor."""
+
+        # Uses Salabim's current 2D zoom state.
+        env = self.env
+
+        x_mouse = event.x
+        y_mouse = env.height() - event.y
+
+        x = (x_mouse / env._scale) + env._x0z
+        y = (y_mouse / env._scale) + env._y0z
+
+        if zoom_in:
+            zoom_factor = 1 / env._zoom_factor
+        else:
+            zoom_factor = env._zoom_factor
+
+        env._scalez /= zoom_factor
+
+        env._x0z = x - (x - env._x0z) * zoom_factor
+        env._y0z = y - (y - env._y0z) * zoom_factor
+
+        env._x1z = x - (x - env._x1z) * zoom_factor
+        env._y1z = y - (y - env._y1z) * zoom_factor
+
+        return "break"
+
+    def on_linux_mousewheel(self, event):
+        """Handle Linux MouseWheel events when available."""
+
+        if event.delta == 0:
+            return "break"
+
+        return self.zoom_linux(
+            event,
+            zoom_in=event.delta > 0,
+        )
+
+    def build_widgets(self):
+        """Construct the fixed dashboard interface."""
+
+        content = tk.Frame(
+            self.panel,
+            bg="#24485B",
+            padx=15,
+            pady=12,
+        )
+
+        content.pack(fill=tk.BOTH, expand=True)
+
+        # Main heading.
+        tk.Label(
+            content,
+            text="ISLAND SURVIVORS",
+            font=("Segoe UI", 18, "bold"),
+            fg="#F4EBD0",
+            bg="#24485B",
+        ).pack(anchor="w", pady=(0, 8))
+
+        self.add_divider(content)
+
+        # --------------------------------------------------
+        # TEAM OVERVIEW
+        # --------------------------------------------------
+
+        self.add_heading(content, "TEAM OVERVIEW")
+
+        self.team_var = tk.StringVar()
+
+        tk.Label(
+            content,
+            textvariable=self.team_var,
+            font=("TkFixedFont", 9),
+            fg="#FFFFFF",
+            bg="#24485B",
+            justify=tk.LEFT,
+            anchor="nw",
+            height=3,
+        ).pack(anchor="w")
+
+        # --------------------------------------------------
+        # EXPLORER SELECTION
+        # --------------------------------------------------
+
+        self.add_heading(content, "SELECT EXPLORER")
+
+        button_frame = tk.Frame(
+            content,
+            bg="#24485B",
+        )
+
+        button_frame.pack(fill=tk.X, pady=(2, 2))
+
+        button_frame.grid_columnconfigure(0, weight=1)
+        button_frame.grid_columnconfigure(1, weight=1)
+
+        for index, explorer in enumerate(self.explorers):
+
+            button = tk.Button(
+                button_frame,
+                text=explorer.name,
+                command=lambda name=explorer.name: (
+                    self.select_explorer(name)
+                ),
+                bg=explorer.color,
+                fg="#FFFFFF",
+                activebackground=explorer.color,
+                activeforeground="#FFFFFF",
+                font=("Segoe UI", 9, "bold"),
+                width=13,
+                height=1,
+                relief=tk.RAISED,
+                bd=1,
+                cursor="hand2",
+            )
+
+            button.grid(
+                row=index // 2,
+                column=index % 2,
+                padx=5,
+                pady=3,
+                sticky="ew",
+            )
+
+            self.buttons[explorer.name] = button
+
+        self.add_divider(content)
+
+        # --------------------------------------------------
+        # EXPLORER INSPECTOR
+        # --------------------------------------------------
+
+        self.add_heading(content, "EXPLORER INSPECTOR")
+
+        self.inspector_var = tk.StringVar()
+
+        tk.Label(
+            content,
+            textvariable=self.inspector_var,
+            font=("TkFixedFont", 9),
+            fg="#FFFFFF",
+            bg="#24485B",
+            justify=tk.LEFT,
+            anchor="nw",
+            height=7,
+            wraplength=315,
+        ).pack(anchor="w")
+
+        self.add_divider(content)
+
+        # --------------------------------------------------
+        # TEAM STORAGE
+        # --------------------------------------------------
+
+        self.add_heading(content, "TEAM STORAGE")
+
+        self.storage_var = tk.StringVar()
+
+        tk.Label(
+            content,
+            textvariable=self.storage_var,
+            font=("TkFixedFont", 9),
+            fg="#FFFFFF",
+            bg="#24485B",
+            justify=tk.LEFT,
+            anchor="nw",
+        ).pack(anchor="w")
+
+        self.add_divider(content)
+
+        # --------------------------------------------------
+        # RECENT EVENTS
+        # --------------------------------------------------
+
+        self.add_heading(content, "RECENT EVENTS")
+
+        self.events_var = tk.StringVar()
+
+        tk.Label(
+            content,
+            textvariable=self.events_var,
+            font=("TkFixedFont", 9),
+            fg="#FFFFFF",
+            bg="#24485B",
+            justify=tk.LEFT,
+            anchor="nw",
+            height=4,
+            wraplength=315,
+        ).pack(anchor="w")
+
+    def add_heading(self, parent, text):
+        """Add a dashboard section heading."""
+
+        tk.Label(
+            parent,
+            text=text,
+            font=("Segoe UI", 11, "bold"),
+            fg="#E9C879",
+            bg="#24485B",
+        ).pack(anchor="w", pady=(7, 3))
+
+    def add_divider(self, parent):
+        """Add a subtle horizontal divider."""
+
+        tk.Frame(
+            parent,
+            bg="#52798A",
+            height=1,
+        ).pack(fill=tk.X, pady=5)
 
     def select_explorer(self, explorer_name):
         """Select an explorer for inspection."""
@@ -27,182 +367,32 @@ class SimulationDashboard:
         for explorer in self.explorers:
             if explorer.name == explorer_name:
                 self.selected_explorer = explorer
-                return
+                break
 
-    def draw_text(self, text, x, y, fontsize=12, color="#FFFFFF"):
-        """Draw a static dashboard label."""
-
-        return self.env.AnimateText(
-            text=text,
-            x=x,
-            y=y,
-            fontsize=fontsize,
-            textcolor=color,
-            layer=11,
-            screen_coordinates=True,
-        )
-
-    def draw(self):
-
-        # Dashboard background.
-        self.env.AnimateRectangle(
-            spec=(665, 50, 900, 480),
-            fillcolor="#24485B",
-            linecolor="#52798A",
-            linewidth=2,
-            layer=12,
-            screen_coordinates=True,
-        )
-
-        # Main heading.
-        self.draw_text(
-            "ISLAND SURVIVORS",
-            670,
-            465,
-            fontsize=22,
-            color="#F4EBD0",
-        )
-
-        # --------------------------------------------------
-        # TEAM OVERVIEW
-        # --------------------------------------------------
-
-        self.draw_text(
-            "TEAM OVERVIEW",
-            680,
-            431,
-            fontsize=14,
-            color="#E9C879",
-        )
-
-        self.env.AnimateText(
-            text=lambda: self.team_overview_text(),
-            x=670,
-            y=410,
-            fontsize=11,
-            textcolor="#FFFFFF",
-            layer=11,
-            screen_coordinates=True,
-        )
-
-        # --------------------------------------------------
-        # EXPLORER SELECTION
-        # --------------------------------------------------
-
-        self.draw_text(
-            "SELECT EXPLORER",
-            670,
-            400,
-            fontsize=14,
-            color="#E9C879",
-        )
-
-        # Create two rows of clickable explorer buttons.
-        for index, explorer in enumerate(self.explorers):
-
-            column = index % 2
-            row = index // 2
-
-            x = 725 + column * 115
-            y = 340 - row * 34
-
-            self.env.AnimateButton(
-                x=x,
-                y=y,
-                width=95,
-                text=explorer.name,
-                fillcolor=explorer.color,
-                color="#FFFFFF",
-                fontsize=11,
-                action=lambda name=explorer.name: (
-                    self.select_explorer(name)
-                ),
-                env=self.env,
-            )
-
-        # --------------------------------------------------
-        # SELECTED EXPLORER
-        # --------------------------------------------------
-
-        self.draw_text(
-            "EXPLORER INSPECTOR",
-            680,
-            340,
-            fontsize=14,
-            color="#E9C879",
-        )
-
-        self.env.AnimateText(
-            text=lambda: self.selected_explorer_text(),
-            x=680,
-            y=315,
-            fontsize=11,
-            textcolor="#FFFFFF",
-            layer=11,
-            screen_coordinates=True,
-        )
-
-        # --------------------------------------------------
-        # TEAM STORAGE
-        # --------------------------------------------------
-
-        self.draw_text(
-            "TEAM STORAGE",
-            680,
-            205,
-            fontsize=14,
-            color="#E9C879",
-        )
-
-        self.env.AnimateText(
-            text=lambda: self.storage_text(),
-            x=680,
-            y=180,
-            fontsize=11,
-            textcolor="#FFFFFF",
-            layer=11,
-            screen_coordinates=True,
-        )
-
-        # --------------------------------------------------
-        # RECENT EVENTS
-        # --------------------------------------------------
-
-        self.draw_text(
-            "RECENT EVENTS",
-            680,
-            135,
-            fontsize=14,
-            color="#E9C879",
-        )
-
-        self.env.AnimateText(
-            text=lambda: self.recent_events_text(),
-            x=680,
-            y=112,
-            fontsize=9,
-            textcolor="#FFFFFF",
-            layer=11,
-            screen_coordinates=True,
-        )
+        self.refresh()
 
     def team_overview_text(self):
-        """Build the live team overview."""
+        """Build the current team overview."""
+
+        explorer = self.selected_explorer
+
+        if explorer is None:
+            return "No explorer selected."
+
+        team_id = explorer.team_id
+
+        team_explorers = [
+            member
+            for member in self.explorers
+            if member.team_id == team_id
+        ]
 
         alive_count = sum(
-            explorer.is_alive
-            for explorer in self.explorers
+            member.is_alive
+            for member in team_explorers
         )
 
-        total_count = len(self.explorers)
-
-        selected_team = (
-            self.selected_explorer.team_id
-            if self.selected_explorer is not None
-            else None
-        )
-
-        knowledge = self.team_knowledge_boards.get(selected_team)
+        knowledge = self.team_knowledge_boards.get(team_id)
 
         known_count = 0
 
@@ -213,13 +403,13 @@ class SimulationDashboard:
             )
 
         return (
-            f"Simulation time: {self.env.now():.1f}\n"
-            f"Explorers alive: {alive_count}/{total_count}\n"
+            f"Team: {team_id} | Time: {self.env.now():.1f}\n"
+            f"Alive: {alive_count}/{len(team_explorers)}\n"
             f"Known resource sites: {known_count}"
         )
 
     def selected_explorer_text(self):
-        """Build the live selected-explorer information."""
+        """Build the current selected-explorer information."""
 
         explorer = self.selected_explorer
 
@@ -235,6 +425,7 @@ class SimulationDashboard:
         if last_decision is None:
             action_text = "Not yet decided"
             reason_text = "No decision recorded."
+
         else:
             action_text = last_decision["message"].replace(
                 "Selected action: ",
@@ -250,14 +441,14 @@ class SimulationDashboard:
                 "No reason recorded.",
             )
 
-        # Keep the reason short enough for the sidebar.
         if len(reason_text) > 38:
             reason_text = reason_text[:35] + "..."
 
         return (
             f"{explorer.name} | {status} | Team {explorer.team_id}\n"
             f"Position: ({explorer.row}, {explorer.col})\n"
-            f"Health: {explorer.health}/100  Hunger: {explorer.hunger}/100\n"
+            f"Health: {explorer.health}/100\n"
+            f"Hunger: {explorer.hunger}/100\n"
             f"Inventory: W:{inventory.get('wood', 0)} "
             f"S:{inventory.get('stone', 0)} "
             f"B:{inventory.get('berries', 0)}\n"
@@ -266,7 +457,7 @@ class SimulationDashboard:
         )
 
     def get_last_decision(self, explorer_name):
-        """Find the most recent decision made by an explorer."""
+        """Find the latest decision made by an explorer."""
 
         events = self.event_logger.get_recent_events(
             limit=100,
@@ -281,14 +472,14 @@ class SimulationDashboard:
         return None
 
     def storage_text(self):
-        """Display storage belonging to the selected explorer's team."""
+        """Build the selected team's storage information."""
 
-        if self.selected_explorer is None:
+        explorer = self.selected_explorer
+
+        if explorer is None:
             return "No team selected."
 
-        team_id = self.selected_explorer.team_id
-
-        storage = self.team_storages.get(team_id)
+        storage = self.team_storages.get(explorer.team_id)
 
         if storage is None:
             return "Storage unavailable."
@@ -302,33 +493,50 @@ class SimulationDashboard:
         )
 
     def recent_events_text(self):
-        """Display the latest meaningful team events."""
+        """Build the latest meaningful team events."""
 
-        if self.selected_explorer is None:
+        explorer = self.selected_explorer
+
+        if explorer is None:
             return "No events."
 
         events = self.event_logger.get_recent_events(
             limit=4,
-            team_id=self.selected_explorer.team_id,
+            team_id=explorer.team_id,
             include_debug=False,
         )
 
         if not events:
             return "Waiting for events..."
 
-        lines = []
+        return "\n".join(
+            f"T={event['time']:.0f} "
+            f"{event['explorer']} {event['event']}"
+            for event in reversed(events)
+        )
 
-        for event in events:
+    def refresh(self):
+        """Refresh dashboard values periodically."""
 
-            message = event["message"].replace("\n", " ")
+        self.team_var.set(self.team_overview_text())
+        self.inspector_var.set(self.selected_explorer_text())
+        self.storage_var.set(self.storage_text())
+        self.events_var.set(self.recent_events_text())
 
-            if len(message) > 27:
-                message = message[:24] + "..."
+        # Highlight the currently selected explorer.
+        for name, button in self.buttons.items():
 
-            lines.append(
-                f"T={event['time']:.0f} "
-                f"{event['explorer']}: "
-                f"{event['event']}"
-            )
+            if (
+                self.selected_explorer is not None
+                and name == self.selected_explorer.name
+            ):
+                button.configure(relief=tk.SUNKEN, bd=2)
 
-        return "\n".join(lines)
+            else:
+                button.configure(relief=tk.RAISED, bd=1)
+
+        # Refresh every 250 milliseconds.
+        try:
+            self.root.after(250, self.refresh)
+        except tk.TclError:
+            pass

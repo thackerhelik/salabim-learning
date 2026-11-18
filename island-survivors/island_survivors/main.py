@@ -33,13 +33,16 @@ def main():
     # Configure animation window
     env.animation_parameters(
         animate=True,
-        width=1000,
+        width=650,
         height=600,
         title="Island Survivors",
         background_color="#173449",
         speed=1,
         fps=30,
         show_fps=True,
+        x0=0,
+        y0=0,
+        x1=650,
     )
 
     # Map configuration
