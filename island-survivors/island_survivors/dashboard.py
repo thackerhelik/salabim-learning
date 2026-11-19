@@ -18,6 +18,7 @@ class SimulationDashboard:
         event_logger,
         map_bounds,
         team_leaders=None,
+        team_states=None,
     ):
         self.env = env
         self.root = env.root
@@ -27,6 +28,7 @@ class SimulationDashboard:
         self.event_logger = event_logger
         self.map_bounds = map_bounds
         self.team_leaders = team_leaders or {}
+        self.team_states = team_states or {}
 
         self._pan_start = None
 
@@ -600,6 +602,14 @@ class SimulationDashboard:
 
         team_id = explorer.team_id
 
+        team_state = self.team_states.get(team_id)
+
+        team_status = (
+            team_state.status
+            if team_state is not None
+            else "UNKNOWN"
+        )
+
         team_explorers = [
             member
             for member in self.explorers
@@ -640,7 +650,7 @@ class SimulationDashboard:
             leader_text = "Leader: unavailable"
 
         return (
-            f"Team: {team_id} | Time: {self.env.now():.1f}\n"
+            f"Team: {team_id} | {team_status} | Time: {self.env.now():.1f}\n"
             f"Alive: {alive_count}/{len(team_explorers)} | "
             f"Known sites: {known_count}\n"
             f"{leader_text}"

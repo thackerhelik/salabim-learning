@@ -756,7 +756,7 @@ class ExplorerController(sim.Component):
         return success
 
 
-    def handle_death(self):
+    def handle_death(self, cause="starvation"):
         """Handle the consequences of an explorer's death."""
 
         if self.death_handled:
@@ -815,25 +815,37 @@ class ExplorerController(sim.Component):
 
         self.death_handled = True
 
+        cause_descriptions = {
+            "starvation": "Starvation.",
+            "team_elimination": (
+                "Team eliminated after its leader died."
+            ),
+            "previous_death": (
+                "Worker had already died before team elimination."
+            ),
+        }
+
+        cause_text = cause_descriptions.get(
+            cause,
+            cause.replace("_", " "),
+        )
+
+        details = [
+            f"Cause: {cause_text}",
+        ]
+
         if inventory:
-            self.event_logger.log(
-                sim_time=self.env.now(),
-                team_id=self.explorer.team_id,
-                explorer_name=self.explorer.name,
-                event="DEATH",
-                message=f"Explorer died at {position}.",
-                details=[
-                    f"Loot cache created: {inventory}",
-                ],
+            details.append(
+                f"Loot cache created: {inventory}"
             )
         else:
-            self.event_logger.log(
-                sim_time=self.env.now(),
-                team_id=self.explorer.team_id,
-                explorer_name=self.explorer.name,
-                event="DEATH",
-                message=f"Explorer died at {position}.",
-                details=[
-                    "No resources were dropped.",
-                ],
-            )
+            details.append("No resources were dropped.")
+
+        self.event_logger.log(
+            sim_time=self.env.now(),
+            team_id=self.explorer.team_id,
+            explorer_name=self.explorer.name,
+            event="DEATH",
+            message=f"Explorer died at {position}.",
+            details=details,
+        )

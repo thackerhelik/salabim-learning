@@ -26,6 +26,7 @@ from entities.team_storage import TeamStorage
 from entities.team_task_board import TeamTaskBoard
 
 from orchestration.event_logger import EventLogger
+from orchestration.team_manager import TeamManager
 
 
 MASTER_SEED = 123
@@ -59,7 +60,7 @@ def main():
 
     # Create fresh workers for these teams.
     explorers = create_explorers(active_bases)
-
+    
     # --------------------------------------------------
     # 2. Initialize the simulation.
     # --------------------------------------------------
@@ -129,6 +130,7 @@ def main():
             col=storage_col,
         )
 
+
     # Create one stationary leader for each team.
     team_leaders = {
         team_id: Leader(
@@ -166,6 +168,8 @@ def main():
     # 5. Create controllers and survival components.
     # --------------------------------------------------
 
+    controllers_by_explorer = {}
+
     for index, explorer in enumerate(explorers):
 
         movement = ExplorerMovement(
@@ -202,6 +206,8 @@ def main():
             event_logger=event_logger,
         )
 
+        controllers_by_explorer[explorer.name] = controller
+
         ExplorerNeeds(
             env=env,
             explorer=explorer,
@@ -210,6 +216,18 @@ def main():
             death_handler=controller.handle_death,
         )
 
+
+    # --------------------------------------------------
+    # 6. Initialize team management.
+    # --------------------------------------------------
+
+    team_manager = TeamManager(
+        env=env,
+        team_leaders=team_leaders,
+        explorers=explorers,
+        controllers=controllers_by_explorer,
+        event_logger=event_logger,
+    )
 
     # Start survival processes for team leaders.
     for team_id, leader in team_leaders.items():
@@ -220,6 +238,9 @@ def main():
             team_storage=team_storages[team_id],
             update_interval=5,
             event_logger=event_logger,
+
+            # Leader death triggers team elimination.
+            death_handler=team_manager.eliminate_team,
         )
 
 
@@ -246,13 +267,16 @@ def main():
         event_logger=event_logger,
         map_bounds=map_bounds,
         team_leaders=team_leaders,
+        team_states=team_manager.teams,
     )
 
     # --------------------------------------------------
     # 7. Run the simulation.
     # --------------------------------------------------
 
-    env.run(env.inf)
+    env.run(till=sim.inf)
+
+    team_manager.print_results()
 
 
 if __name__ == "__main__":

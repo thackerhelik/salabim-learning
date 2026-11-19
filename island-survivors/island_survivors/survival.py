@@ -154,11 +154,13 @@ class LeaderNeeds(sim.Component):
         team_storage,
         update_interval=5,
         event_logger=None,
+        death_handler=None,
     ):
         self.leader = leader
         self.team_storage = team_storage
         self.update_interval = update_interval
         self.event_logger = event_logger
+        self.death_handler = death_handler
 
     def process(self):
 
@@ -220,4 +222,9 @@ class LeaderNeeds(sim.Component):
                 )
 
             if not self.leader.is_alive:
+
+                # Notify the TeamManager.
+                if self.death_handler is not None:
+                    self.death_handler(self.leader.team_id)
+
                 break
