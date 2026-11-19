@@ -29,7 +29,58 @@ from orchestration.event_logger import EventLogger
 from orchestration.team_manager import TeamManager
 
 
-MASTER_SEED = 123
+MASTER_SEED = 789
+
+
+def print_gather_totals(event_logger):
+    """Print total resources gathered by each team."""
+
+    totals = {}
+
+    events = event_logger.get_recent_events(
+        limit=10000,
+        include_debug=True,
+    )
+
+    for event in events:
+
+        if event["event"] != "GATHER":
+            continue
+
+        team_id = event["team_id"]
+
+        for detail in event["details"]:
+
+            if not detail.startswith("Inventory - "):
+                continue
+
+            resource_info = detail[len("Inventory - "):]
+
+            resource_type, quantities = resource_info.split(":", 1)
+
+            old_quantity, new_quantity = quantities.split("->")
+
+            collected = int(new_quantity) - int(old_quantity)
+
+            team_totals = totals.setdefault(team_id, {})
+
+            team_totals[resource_type.strip()] = (
+                team_totals.get(resource_type.strip(), 0)
+                + collected
+            )
+
+    print("\n" + "=" * 45)
+    print("           RESOURCE GATHERING")
+    print("=" * 45)
+
+    for team_id, resources in sorted(totals.items()):
+
+        print(f"\nTeam {team_id}")
+
+        for resource_type, quantity in sorted(resources.items()):
+            print(f"  {resource_type}: {quantity}")
+
+    print("=" * 45)
 
 
 def main():
@@ -162,7 +213,7 @@ def main():
         for explorer in explorers
     }
 
-    event_logger = EventLogger(debug=True)
+    event_logger = EventLogger(debug=True, max_events=10000,)
 
     # --------------------------------------------------
     # 5. Create controllers and survival components.
@@ -277,6 +328,7 @@ def main():
     env.run(till=sim.inf)
 
     team_manager.print_results()
+    print_gather_totals(event_logger)
 
 
 if __name__ == "__main__":
