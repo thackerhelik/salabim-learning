@@ -32,55 +32,325 @@ from orchestration.team_manager import TeamManager
 MASTER_SEED = 789
 
 
-def print_gather_totals(event_logger):
-    """Print total resources gathered by each team."""
 
-    totals = {}
+RESOURCE_TYPES = ("wood", "stone", "berries")
+
+
+def parse_resource_change(detail, prefix):
+    """Extract a resource quantity change from an event detail."""
+
+    if not detail.startswith(prefix):
+        return None
+
+    try:
+        label, values = detail.split(":", 1)
+        resource_type = label[len(prefix):].strip()
+
+        previous, current = values.split("->", 1)
+
+        return (
+            resource_type,
+            int(previous.strip()),
+            int(current.strip()),
+        )
+
+    except (ValueError, IndexError):
+        return None
+
+
+def print_resource_economy_summary(
+    event_logger,
+    team_storages,
+    explorers,
+    loot_caches,
+    initial_storage_inventory,
+):
+    """Print a detailed resource-flow report for each team."""
 
     events = event_logger.get_recent_events(
         limit=10000,
         include_debug=True,
     )
 
-    for event in events:
+    # Initialise counters for each team.
+    metrics = {}
 
-        if event["event"] != "GATHER":
-            continue
+    for team_id in team_storages:
+
+        metrics[team_id] = {
+            "gathered": {},
+            "looted": {},
+            "deposited": {},
+            "withdrawn": {},
+            "worker_consumed": 0,
+            "worker_eat_events": 0,
+            "leader_consumed": 0,
+            "leader_feed_events": 0,
+            "deposit_events": 0,
+        }
+
+    def add_amount(bucket, resource_type, amount):
+        bucket[resource_type] = (
+            bucket.get(resource_type, 0) + amount
+        )
+
+    # --------------------------------------------------
+    # 1. Analyse recorded events.
+    # --------------------------------------------------
+
+    for event in events:
 
         team_id = event["team_id"]
 
-        for detail in event["details"]:
+        if team_id not in metrics:
+            continue
 
-            if not detail.startswith("Inventory - "):
-                continue
+        event_type = event["event"]
+        team_metrics = metrics[team_id]
 
-            resource_info = detail[len("Inventory - "):]
+        for detail in event.get("details") or []:
 
-            resource_type, quantities = resource_info.split(":", 1)
-
-            old_quantity, new_quantity = quantities.split("->")
-
-            collected = int(new_quantity) - int(old_quantity)
-
-            team_totals = totals.setdefault(team_id, {})
-
-            team_totals[resource_type.strip()] = (
-                team_totals.get(resource_type.strip(), 0)
-                + collected
+            inventory_change = parse_resource_change(
+                detail,
+                "Inventory - ",
             )
 
-    print("\n" + "=" * 45)
-    print("           RESOURCE GATHERING")
-    print("=" * 45)
+            storage_change = parse_resource_change(
+                detail,
+                "Team storage - ",
+            )
 
-    for team_id, resources in sorted(totals.items()):
+            # Resources gathered directly from the world.
+            if event_type == "GATHER" and inventory_change:
 
-        print(f"\nTeam {team_id}")
+                resource, previous, current = inventory_change
 
-        for resource_type, quantity in sorted(resources.items()):
-            print(f"  {resource_type}: {quantity}")
+                add_amount(
+                    team_metrics["gathered"],
+                    resource,
+                    max(0, current - previous),
+                )
 
-    print("=" * 45)
+            # Resources recovered from loot caches.
+            elif event_type == "LOOT" and inventory_change:
+
+                resource, previous, current = inventory_change
+
+                add_amount(
+                    team_metrics["looted"],
+                    resource,
+                    max(0, current - previous),
+                )
+
+            # Resources consumed by workers.
+            elif event_type == "EAT" and inventory_change:
+
+                resource, previous, current = inventory_change
+
+                if resource == "berries":
+
+                    consumed = max(0, previous - current)
+
+                    team_metrics["worker_consumed"] += consumed
+
+                    if consumed > 0:
+                        team_metrics["worker_eat_events"] += 1
+
+            # Resources deposited into team storage.
+            elif event_type == "DEPOSIT" and storage_change:
+
+                resource, previous, current = storage_change
+
+                deposited = max(0, current - previous)
+
+                add_amount(
+                    team_metrics["deposited"],
+                    resource,
+                    deposited,
+                )
+
+                if deposited > 0:
+                    team_metrics["deposit_events"] += 1
+
+            # Resources withdrawn from team storage by workers.
+            elif event_type == "WITHDRAW" and storage_change:
+
+                resource, previous, current = storage_change
+
+                add_amount(
+                    team_metrics["withdrawn"],
+                    resource,
+                    max(0, previous - current),
+                )
+
+            # Resources consumed directly by the leader.
+            if event_type == "LEADER_FED":
+
+                if detail.startswith("Berries consumed:"):
+
+                    consumed = int(
+                        detail.split(":", 1)[1].strip()
+                    )
+
+                    team_metrics["leader_consumed"] += consumed
+
+                    if consumed > 0:
+                        team_metrics["leader_feed_events"] += 1
+
+    # --------------------------------------------------
+    # 2. Calculate resources remaining at episode end.
+    # --------------------------------------------------
+
+    loot_totals = {
+        resource: 0
+        for resource in RESOURCE_TYPES
+    }
+
+    for cache in loot_caches.values():
+
+        for resource in RESOURCE_TYPES:
+
+            loot_totals[resource] += (
+                cache.inventory.get(resource, 0)
+            )
+
+    # --------------------------------------------------
+    # 3. Print report.
+    # --------------------------------------------------
+
+    print("\n" + "=" * 55)
+    print("                 RESOURCE ECONOMY")
+    print("=" * 55)
+
+    for team_id in sorted(team_storages):
+
+        team_metrics = metrics[team_id]
+        storage = team_storages[team_id]
+
+        workers = [
+            explorer
+            for explorer in explorers
+            if explorer.team_id == team_id
+        ]
+
+        initial = initial_storage_inventory.get(team_id, {})
+        final = storage.inventory
+
+        carried = {
+            resource: sum(
+                worker.inventory.get(resource, 0)
+                for worker in workers
+            )
+            for resource in RESOURCE_TYPES
+        }
+
+        alive_workers = sum(
+            worker.is_alive
+            for worker in workers
+        )
+
+        def format_resources(inventory):
+            return ", ".join(
+                f"{resource}={inventory.get(resource, 0)}"
+                for resource in RESOURCE_TYPES
+            )
+
+        print(f"\nTEAM {team_id}")
+        print("-" * 45)
+
+        print(
+            f"Workers alive: "
+            f"{alive_workers}/{len(workers)}"
+        )
+
+        print(
+            f"Gathered from world: "
+            f"{format_resources(team_metrics['gathered'])}"
+        )
+
+        print(
+            f"Recovered from loot: "
+            f"{format_resources(team_metrics['looted'])}"
+        )
+
+        print(
+            f"Deposited into storage: "
+            f"{format_resources(team_metrics['deposited'])}"
+        )
+
+        print(
+            f"Withdrawn by workers: "
+            f"{format_resources(team_metrics['withdrawn'])}"
+        )
+
+        print(
+            f"Berries consumed by workers: "
+            f"{team_metrics['worker_consumed']} "
+            f"({team_metrics['worker_eat_events']} eating events)"
+        )
+
+        print(
+            f"Berries consumed by leader: "
+            f"{team_metrics['leader_consumed']} "
+            f"({team_metrics['leader_feed_events']} feeding events)"
+        )
+
+        print(
+            f"Deposit events: "
+            f"{team_metrics['deposit_events']}"
+        )
+
+        print(
+            f"Starting storage: "
+            f"{format_resources(initial)}"
+        )
+
+        print(
+            f"Ending storage: "
+            f"{format_resources(final)}"
+        )
+
+        print(
+            f"Resources still carried: "
+            f"{format_resources(carried)}"
+        )
+
+        # Check that the storage accounting balances.
+        print("\nStorage balance checks:")
+
+        for resource in RESOURCE_TYPES:
+
+            leader_consumption = (
+                team_metrics["leader_consumed"]
+                if resource == "berries"
+                else 0
+            )
+
+            expected = (
+                initial.get(resource, 0)
+                + team_metrics["deposited"].get(resource, 0)
+                - team_metrics["withdrawn"].get(resource, 0)
+                - leader_consumption
+            )
+
+            actual = final.get(resource, 0)
+
+            status = "OK" if expected == actual else "MISMATCH"
+
+            print(
+                f"  {resource}: "
+                f"expected={expected}, actual={actual} "
+                f"[{status}]"
+            )
+
+    # Loot caches are not currently associated with a team.
+    print("\n" + "-" * 45)
+    print("REMAINING LOOT CACHES (ALL TEAMS)")
+    print(format_resources(loot_totals))
+    print(f"Number of remaining caches: {len(loot_caches)}")
+
+    print("=" * 55)
+
 
 
 def main():
@@ -181,6 +451,15 @@ def main():
             col=storage_col,
         )
 
+
+    # Can add temporary initial values here if needed
+    # eg. team_storages[2].inventory["berries"] = 6
+
+
+    initial_storage_inventory = {
+        team_id: storage.inventory.copy()
+        for team_id, storage in team_storages.items()
+    }
 
     # Create one stationary leader for each team.
     team_leaders = {
@@ -328,7 +607,14 @@ def main():
     env.run(till=sim.inf)
 
     team_manager.print_results()
-    print_gather_totals(event_logger)
+
+    print_resource_economy_summary(
+        event_logger=event_logger,
+        team_storages=team_storages,
+        explorers=explorers,
+        loot_caches=loot_caches,
+        initial_storage_inventory=initial_storage_inventory,
+    )
 
 
 if __name__ == "__main__":
