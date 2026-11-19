@@ -1,11 +1,8 @@
 
 import salabim as sim
 import random
+import argparse
 
-from island_survivors.map_renderer import (
-    draw_map,
-    draw_explorers,
-)
 
 from island_survivors.explorers import create_explorers
 from island_survivors.map_data import generate_scenario
@@ -15,7 +12,6 @@ from island_survivors.survival import (
     LeaderNeeds,
 )
 from entities.leader import Leader
-from island_survivors.dashboard import SimulationDashboard
 
 from environment import create_resources
 from agents.rule_based_agent import RuleBasedAgent
@@ -353,11 +349,40 @@ def print_resource_economy_summary(
 
 
 
-def main():
+def parse_args(argv=None):
+    """Parse command-line configuration."""
+
+    parser = argparse.ArgumentParser(
+        description="Island Survivors simulation"
+    )
+
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run without map animation or dashboard.",
+    )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=MASTER_SEED,
+        help=f"Master random seed (default: {MASTER_SEED}).",
+    )
+
+    return parser.parse_args(argv)
+
+
+def main(args=None):
+
+    if args is None:
+        args = parse_args()
+
+    master_seed = args.seed
+    headless = args.headless
 
     
     # Derive separate, reproducible seeds
-    seed_generator = random.Random(MASTER_SEED)
+    seed_generator = random.Random(master_seed)
     MAP_SEED = seed_generator.getrandbits(32)
     SIM_SEED = seed_generator.getrandbits(32)
 
@@ -371,7 +396,11 @@ def main():
     features = scenario["features"]
     bases = scenario["bases"]
 
-    print(f"Starting scenario with seed {scenario['seed']}")
+    print(
+        f"Master seed: {master_seed} | "
+        f"Map seed: {MAP_SEED} | "
+        f"Simulation seed: {SIM_SEED}"
+    )
 
     # Activate two diagonally opposite bases.
     active_bases = {
@@ -381,6 +410,7 @@ def main():
 
     # Create fresh workers for these teams.
     explorers = create_explorers(active_bases)
+
     
     # --------------------------------------------------
     # 2. Initialize the simulation.
@@ -391,35 +421,50 @@ def main():
         random_seed=SIM_SEED,
     )
 
-    env.animation_parameters(
-        animate=True,
-        width=650,
-        height=600,
-        title="Island Survivors",
-        background_color="#173449",
-        speed=1,
-        fps=30,
-        show_fps=True,
-
-        x0=15,
-        y0=-30,
-        x1=665,
-    )
-
-    # Map configuration.
+    # Map configuration is shared by both execution modes.
     map_options = {
         "tile_size": 26,
         "origin_x": 65,
         "origin_y": 40,
     }
 
-    # Draw the generated map.
-    draw_map(
-        env,
-        map_layout,
-        features,
-        **map_options,
-    )
+    # Animation and rendering are only initialized in visual mode.
+    if not headless:
+
+        from island_survivors.map_renderer import (
+            draw_map,
+            draw_explorers,
+        )
+
+        from island_survivors.dashboard import SimulationDashboard
+
+        env.animation_parameters(
+            animate=True,
+            width=650,
+            height=600,
+            title="Island Survivors",
+            background_color="#173449",
+            speed=1,
+            fps=30,
+            show_fps=True,
+            x0=15,
+            y0=-30,
+            x1=665,
+        )
+
+        draw_map(
+            env,
+            map_layout,
+            features,
+            **map_options,
+        )
+
+        explorer_animations = {}
+
+    else:
+
+        # No graphical objects are created in headless mode.
+        explorer_animations = {}
 
     # Create world resources.
     resources = create_resources(features)
@@ -471,16 +516,22 @@ def main():
     }
 
     # --------------------------------------------------
-    # 4. Draw explorers and initialize occupancy.
+    # 4. Draw explorers (visual mode only).
     # --------------------------------------------------
 
-    explorer_animations = draw_explorers(
-        env,
-        explorers,
-        map_layout,
-        features,
-        **map_options,
-    )
+    if not headless:
+
+        explorer_animations = draw_explorers(
+            env,
+            explorers,
+            map_layout,
+            features,
+            **map_options,
+        )
+
+    else:
+
+        explorer_animations = {}
 
     blocked_positions = {
         (row, col)
@@ -492,7 +543,10 @@ def main():
         for explorer in explorers
     }
 
-    event_logger = EventLogger(debug=True, max_events=10000,)
+    event_logger = EventLogger(
+        debug=not headless,
+        max_events=10000,
+    )
 
     # --------------------------------------------------
     # 5. Create controllers and survival components.
@@ -504,7 +558,7 @@ def main():
 
         movement = ExplorerMovement(
             explorer=explorer,
-            animation_objects=explorer_animations[explorer.name],
+            animation_objects=explorer_animations.get(explorer.name),
 
             map_layout=map_layout,
             blocked_positions=blocked_positions,
@@ -578,27 +632,28 @@ def main():
     # 6. Configure the dashboard.
     # --------------------------------------------------
 
-    tile_size = map_options["tile_size"]
-    origin_x = map_options["origin_x"]
-    origin_y = map_options["origin_y"]
+    if not headless:
+        tile_size = map_options["tile_size"]
+        origin_x = map_options["origin_x"]
+        origin_y = map_options["origin_y"]
 
-    map_bounds = (
-        origin_x,
-        origin_y,
-        origin_x + len(map_layout[0]) * tile_size,
-        origin_y + len(map_layout) * tile_size,
-    )
+        map_bounds = (
+                origin_x,
+                origin_y,
+                origin_x + len(map_layout[0]) * tile_size,
+                origin_y + len(map_layout) * tile_size,
+            )
 
-    dashboard = SimulationDashboard(
-        env=env,
-        explorers=explorers,
-        team_storages=team_storages,
-        team_knowledge_boards=team_knowledge_boards,
-        event_logger=event_logger,
-        map_bounds=map_bounds,
-        team_leaders=team_leaders,
-        team_states=team_manager.teams,
-    )
+        dashboard = SimulationDashboard(
+            env=env,
+            explorers=explorers,
+            team_storages=team_storages,
+            team_knowledge_boards=team_knowledge_boards,
+            event_logger=event_logger,
+            map_bounds=map_bounds,
+            team_leaders=team_leaders,
+            team_states=team_manager.teams,
+        )
 
     # --------------------------------------------------
     # 7. Run the simulation.
@@ -618,4 +673,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args)

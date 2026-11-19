@@ -1,6 +1,5 @@
 import random
 from collections import deque
-from island_survivors.map_renderer import get_tile_center
 
 
 class ExplorerMovement:
@@ -20,6 +19,13 @@ class ExplorerMovement:
     ):
         self.explorer = explorer
         self.animation_objects = animation_objects
+
+        # None in headless mode; otherwise references the sprite position.
+        self.position = (
+            animation_objects["position"]
+            if animation_objects is not None
+            else None
+        )
 
         self.map_layout = map_layout
         self.blocked_positions = blocked_positions
@@ -292,9 +298,11 @@ class ExplorerMovement:
         # Mark the movement routine as cancelled.
         move["cancelled"] = True
 
-        # Return the sprite to its last committed position.
-        move["position"]["x"] = move["start_x"]
-        move["position"]["y"] = move["start_y"]
+        # Return the sprite to its last committed position, if animated.
+        if move["position"] is not None:
+
+            move["position"]["x"] = move["start_x"]
+            move["position"]["y"] = move["start_y"]
 
         # Release the reserved destination.
         self.occupied_positions.discard(
@@ -340,13 +348,11 @@ class ExplorerMovement:
         )
 
     def _move_to_position(self, process, next_position):
-        """Animate movement, committing the move only after completion.
+        """Move one tile, optionally animating the sprite.
 
-        If the explorer dies during animation, the move is cancelled
-        and the explorer remains at its previous grid position.
+        Movement duration and scheduling are preserved in headless mode.
         """
 
-        # Do not start a move for a dead explorer.
         if not self.explorer.is_alive or next_position is None:
             return False
 
@@ -355,33 +361,40 @@ class ExplorerMovement:
             self.explorer.col,
         )
 
-        # Recheck availability before reserving the destination.
         if next_position in self.occupied_positions:
             return False
 
-        # Reserve the destination to prevent collisions.
+        # Reserve the destination.
         self.occupied_positions.add(next_position)
 
         new_row, new_col = next_position
 
-        target_x, target_y = get_tile_center(
-            new_row,
-            new_col,
-            len(self.map_layout),
-            self.tile_size,
-            self.origin_x,
-            self.origin_y,
-        )
+        # Calculate screen coordinates only when animation is enabled.
+        if self.position is not None:
 
-        position = self.animation_objects["position"]
+            from island_survivors.map_renderer import get_tile_center
 
-        start_x = position["x"]
-        start_y = position["y"]
+            target_x, target_y = get_tile_center(
+                new_row,
+                new_col,
+                len(self.map_layout),
+                self.tile_size,
+                self.origin_x,
+                self.origin_y,
+            )
 
-        # Keep a record that can also be accessed by death handling.
+            start_x = self.position["x"]
+            start_y = self.position["y"]
+
+        else:
+            start_x = None
+            start_y = None
+            target_x = None
+            target_y = None
+
         move = {
             "destination": next_position,
-            "position": position,
+            "position": self.position,
             "start_x": start_x,
             "start_y": start_y,
             "cancelled": False,
@@ -396,7 +409,6 @@ class ExplorerMovement:
 
             for i in range(1, animation_steps + 1):
 
-                # Another component may have cancelled this move.
                 if move["cancelled"] or not self.explorer.is_alive:
 
                     if self._active_move is move:
@@ -404,20 +416,22 @@ class ExplorerMovement:
 
                     return False
 
-                fraction = i / animation_steps
+                # Update graphical position only in visual mode.
+                if self.position is not None:
 
-                position["x"] = (
-                    start_x + (target_x - start_x) * fraction
-                )
+                    fraction = i / animation_steps
 
-                position["y"] = (
-                    start_y + (target_y - start_y) * fraction
-                )
+                    self.position["x"] = (
+                        start_x + (target_x - start_x) * fraction
+                    )
 
-                # Allow other Salabim components to execute.
+                    self.position["y"] = (
+                        start_y + (target_y - start_y) * fraction
+                    )
+
+                # Preserve simulation timing in both modes.
                 process.hold(step_duration)
 
-                # Check immediately after every yield point.
                 if move["cancelled"] or not self.explorer.is_alive:
 
                     if self._active_move is move:
@@ -425,7 +439,6 @@ class ExplorerMovement:
 
                     return False
 
-            # The movement animation is complete.
             # Commit the new grid position.
             self.explorer.row = new_row
             self.explorer.col = new_col
@@ -433,10 +446,8 @@ class ExplorerMovement:
             # Release the previous tile.
             self.occupied_positions.remove(current_position)
 
-            # The move is committed; it can no longer be rolled back.
             self._active_move = None
 
-            # Preserve the existing movement pause.
             if self.pause_duration > 0:
                 process.hold(self.pause_duration)
 
@@ -444,7 +455,6 @@ class ExplorerMovement:
 
         except Exception:
 
-            # Do not leave a destination reserved after an error.
             if self._active_move is move:
                 self.cancel_current_move()
 
