@@ -369,7 +369,15 @@ def parse_args(argv=None):
         help=f"Master random seed (default: {MASTER_SEED}).",
     )
 
+    parser.add_argument(
+        "--log-level",
+        choices=["quiet", "summary", "info", "debug"],
+        default=None,
+        help="Console logging verbosity.",
+    )
+
     return parser.parse_args(argv)
+
 
 
 def main(args=None):
@@ -380,9 +388,15 @@ def main(args=None):
     master_seed = args.seed
     headless = args.headless
 
-    
-    # Derive separate, reproducible seeds
+    # Choose a sensible default based on execution mode.
+    if args.log_level is None:
+        log_level = "summary" if headless else "debug"
+    else:
+        log_level = args.log_level
+
+    # Derive separate, reproducible seeds.
     seed_generator = random.Random(master_seed)
+
     MAP_SEED = seed_generator.getrandbits(32)
     SIM_SEED = seed_generator.getrandbits(32)
 
@@ -396,11 +410,12 @@ def main(args=None):
     features = scenario["features"]
     bases = scenario["bases"]
 
-    print(
-        f"Master seed: {master_seed} | "
-        f"Map seed: {MAP_SEED} | "
-        f"Simulation seed: {SIM_SEED}"
-    )
+    if log_level != "quiet":
+        print(
+            f"Master seed: {master_seed} | "
+            f"Map seed: {MAP_SEED} | "
+            f"Simulation seed: {SIM_SEED}"
+        )
 
     # Activate two diagonally opposite bases.
     active_bases = {
@@ -544,7 +559,7 @@ def main(args=None):
     }
 
     event_logger = EventLogger(
-        debug=not headless,
+        level=log_level,
         max_events=10000,
     )
 
@@ -661,15 +676,19 @@ def main(args=None):
 
     env.run(till=sim.inf)
 
+    # Always print the episode outcome.
     team_manager.print_results()
 
-    print_resource_economy_summary(
-        event_logger=event_logger,
-        team_storages=team_storages,
-        explorers=explorers,
-        loot_caches=loot_caches,
-        initial_storage_inventory=initial_storage_inventory,
-    )
+    # Print detailed resource economy for all levels except quiet.
+    if log_level != "quiet":
+
+        print_resource_economy_summary(
+            event_logger=event_logger,
+            team_storages=team_storages,
+            explorers=explorers,
+            loot_caches=loot_caches,
+            initial_storage_inventory=initial_storage_inventory,
+        )
 
 
 if __name__ == "__main__":
