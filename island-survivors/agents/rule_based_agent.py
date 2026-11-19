@@ -34,6 +34,49 @@ class RuleBasedAgent:
         storage = observation.get("team_storage")
 
         # --------------------------------------------------
+        # PRIORITY 0: Deliver surplus berries to team storage.
+        # --------------------------------------------------
+
+        if storage is not None:
+
+            berries = inventory.get("berries", 0)
+
+            # Keep one berry for personal survival.
+            surplus = max(0, berries - 1)
+
+            # Only make a delivery when hunger is not critical.
+            if surplus > 0 and hunger < 90:
+
+                storage_position = tuple(storage["position"])
+
+                distance = (
+                    abs(current_position[0] - storage_position[0])
+                    + abs(current_position[1] - storage_position[1])
+                )
+
+                if distance <= 1:
+
+                    return {
+                        "action": "deposit",
+                        "resource_type": "berries",
+                        "amount": surplus,
+                        "reason": (
+                            f"Carrying {surplus} surplus berries. "
+                            "Depositing them for leader survival."
+                        ),
+                    }
+
+                return {
+                    "action": "navigate",
+                    "target_position": storage_position,
+                    "target_type": "storage",
+                    "reason": (
+                        f"Carrying {surplus} surplus berries. "
+                        "Returning to base to supply the team."
+                    ),
+                }
+
+        # --------------------------------------------------
         # PRIORITY 1: Eat when hungry and carrying berries.
         # --------------------------------------------------
 
@@ -93,10 +136,10 @@ class RuleBasedAgent:
                     }
 
             # --------------------------------------------------
-            # PRIORITY 4: Withdraw food from team storage.
+            # PRIORITY 4: Emergency food from team storage.
             # --------------------------------------------------
 
-            if storage is not None:
+            if storage is not None and hunger >= 90:
 
                 storage_position = tuple(storage["position"])
 
@@ -115,10 +158,11 @@ class RuleBasedAgent:
                         return {
                             "action": "withdraw",
                             "resource_type": "berries",
-                            "amount": 2,
+                            "amount": 1,
                             "reason": (
-                                "Hungry and berries are available "
-                                "in team storage."
+                                "Critically hungry and no personal "
+                                "food is available. Withdrawing one "
+                                "berry for emergency survival."
                             ),
                         }
 
@@ -127,8 +171,9 @@ class RuleBasedAgent:
                         "target_position": storage_position,
                         "target_type": "storage",
                         "reason": (
-                            "Hungry and team storage contains berries. "
-                            "Moving towards storage."
+                            "Critically hungry and team storage "
+                            "contains berries. Moving towards "
+                            "storage for emergency food."
                         ),
                     }
 
