@@ -17,7 +17,7 @@
     },
     "log_level": "quiet",
     "execution_mode": "headless",
-    "git_commit": "e9ca82e49e9cfac2d5b50c0affb6a53837d41c00",
+    "git_commit": "ff24f6d91483784ce05faa59b33eeef896315c3d",
     "tracked_working_tree_changes": true,
     "episode_master_seeds": [
         4937772249435845478,
