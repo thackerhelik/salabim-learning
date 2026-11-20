@@ -463,6 +463,7 @@ def run_experiments(
     placement="nw-se",
     teams=2,
     team_assignment=None,
+    print_summary=True,
 ):
     """Run multiple independent episodes and save their results."""
 
@@ -744,13 +745,15 @@ def run_experiments(
         all_results[0]["episode"]["teams"]
     )
 
-    print_experiment_summary(
-        summary=summary,
-        team_ids=team_ids,
-    )
+    if print_summary:
 
-    print("\nExperiment files saved to:")
-    print(experiment_path.resolve())
+        print_experiment_summary(
+            summary=summary,
+            team_ids=team_ids,
+        )
+
+        print("\nExperiment files saved to:")
+        print(experiment_path.resolve())
 
     return {
         "experiment_seed": experiment_seed,
