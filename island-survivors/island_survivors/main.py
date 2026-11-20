@@ -208,7 +208,7 @@ def run_episode(
     map_options = {
         "tile_size": 26,
         "origin_x": 65,
-        "origin_y": 40,
+        "origin_y": 30,
     }
 
     # Animation and rendering are only initialized in visual mode.
@@ -224,7 +224,7 @@ def run_episode(
         env.animation_parameters(
             animate=True,
             width=650,
-            height=600,
+            height=640,
             title="Island Survivors",
             background_color="#173449",
             speed=1,

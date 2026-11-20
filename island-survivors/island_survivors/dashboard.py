@@ -7,7 +7,7 @@ class SimulationDashboard:
 
     MAP_WIDTH = 650
     PANEL_WIDTH = 350
-    WINDOW_HEIGHT = 600
+    WINDOW_HEIGHT = 640
 
     def __init__(
         self,
@@ -347,16 +347,95 @@ class SimulationDashboard:
 
 
     def build_widgets(self):
-        """Construct the fixed dashboard interface."""
+        """Construct the scrollable dashboard interface."""
 
-        content = tk.Frame(
+        # --------------------------------------------------
+        # SCROLLABLE SIDEBAR CONTAINER
+        # --------------------------------------------------
+
+        self.sidebar_frame = tk.Frame(
             self.panel,
+            bg="#24485B",
+        )
+
+        self.sidebar_frame.pack(
+            fill=tk.BOTH,
+            expand=True,
+        )
+
+        # Vertical scrollbar.
+        self.sidebar_scrollbar = tk.Scrollbar(
+            self.sidebar_frame,
+            orient=tk.VERTICAL,
+        )
+
+        self.sidebar_scrollbar.pack(
+            side=tk.RIGHT,
+            fill=tk.Y,
+        )
+
+        # Canvas that provides vertical scrolling.
+        self.sidebar_canvas = tk.Canvas(
+            self.sidebar_frame,
+            bg="#24485B",
+            highlightthickness=0,
+            yscrollcommand=self.sidebar_scrollbar.set,
+        )
+
+        self.sidebar_canvas.pack(
+            side=tk.LEFT,
+            fill=tk.BOTH,
+            expand=True,
+        )
+
+        self.sidebar_scrollbar.configure(
+            command=self.sidebar_canvas.yview,
+        )
+
+        # Actual dashboard content.
+        content = tk.Frame(
+            self.sidebar_canvas,
             bg="#24485B",
             padx=15,
             pady=12,
         )
 
-        content.pack(fill=tk.BOTH, expand=True)
+        self.sidebar_window = self.sidebar_canvas.create_window(
+            (0, 0),
+            window=content,
+            anchor="nw",
+        )
+
+        # Update scrollable area whenever content changes size.
+        content.bind(
+            "<Configure>",
+            self.update_sidebar_scrollregion,
+        )
+
+        # Keep content width equal to the available canvas width.
+        self.sidebar_canvas.bind(
+            "<Configure>",
+            self.resize_sidebar_content,
+        )
+
+        # Enable mouse-wheel scrolling.
+        self.root.bind_all(
+            "<MouseWheel>",
+            self.on_sidebar_mousewheel,
+            add="+",
+        )
+
+        self.root.bind_all(
+            "<Button-4>",
+            self.on_sidebar_mousewheel,
+            add="+",
+        )
+
+        self.root.bind_all(
+            "<Button-5>",
+            self.on_sidebar_mousewheel,
+            add="+",
+        )
 
         # Main heading.
         tk.Label(
@@ -561,6 +640,73 @@ class SimulationDashboard:
             height=4,
             wraplength=315,
         ).pack(anchor="w")
+
+
+    def update_sidebar_scrollregion(self, event=None):
+        """Update the scrollable region to match dashboard content."""
+
+        self.sidebar_canvas.configure(
+            scrollregion=self.sidebar_canvas.bbox("all")
+        )
+
+
+    def resize_sidebar_content(self, event):
+        """Make dashboard content fit the available sidebar width."""
+
+        self.sidebar_canvas.itemconfigure(
+            self.sidebar_window,
+            width=event.width,
+        )
+
+
+    def is_sidebar_widget(self, widget):
+        """Check whether a widget belongs to the dashboard sidebar."""
+
+        while widget is not None:
+
+            if widget is self.sidebar_frame:
+                return True
+
+            widget = widget.master
+
+        return False
+
+
+    def on_sidebar_mousewheel(self, event):
+        """Scroll the dashboard when the mouse is over its sidebar."""
+
+        # Don't interfere with map interactions.
+        if not self.is_sidebar_widget(event.widget):
+            return
+
+        button = getattr(event, "num", None)
+
+        # Linux mouse wheel.
+        if button == 4:
+            units = -3
+
+        elif button == 5:
+            units = 3
+
+        # Windows and macOS mouse wheel.
+        else:
+            delta = getattr(event, "delta", 0)
+
+            if delta == 0:
+                return
+
+            if abs(delta) >= 120:
+                units = -int(delta / 120) * 3
+            else:
+                units = -1 if delta > 0 else 1
+
+        self.sidebar_canvas.yview_scroll(
+            units,
+            "units",
+        )
+
+        return "break"
+
 
     def add_heading(self, parent, text):
         """Add a dashboard section heading."""

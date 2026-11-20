@@ -1,5 +1,3 @@
-
-
 TERRAIN_COLORS = {
     "~": "#347DAB",  # Water
     "s": "#D9BD83",  # Sand
