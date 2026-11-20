@@ -1,0 +1,28 @@
+{
+    "experiment_seed": 124,
+    "number_of_episodes": 3,
+    "number_of_teams": 4,
+    "team_ids": [
+        1,
+        2,
+        3,
+        4
+    ],
+    "placement": "four-corners",
+    "team_assignment": {
+        "nw": 1,
+        "ne": 2,
+        "se": 3,
+        "sw": 4
+    },
+    "log_level": "summary",
+    "execution_mode": "headless",
+    "git_commit": "510851101fb9f3d810f240840f31ad2ccbe6b82c",
+    "tracked_working_tree_changes": true,
+    "episode_master_seeds": [
+        5124652533858810433,
+        105824547669439965,
+        17476158701970986180
+    ],
+    "seed_derivation": "Each episode master seed is derived from random.Random(experiment_seed)."
+}

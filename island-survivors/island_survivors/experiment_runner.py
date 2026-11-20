@@ -97,6 +97,14 @@ def build_episode_row(
         "outcome": episode["outcome"],
         "winner_team_id": result["winner_team_id"],
     }
+    
+    assignment = result.get("team_assignment")
+
+    row["team_assignment"] = (
+        json.dumps(assignment, sort_keys=True)
+        if assignment is not None
+        else ""
+    )
 
     for team_id, team in sorted(episode["teams"].items()):
 
@@ -454,6 +462,7 @@ def run_experiments(
     output_dir="results/baseline_v1",
     placement="nw-se",
     teams=2,
+    team_assignment=None,
 ):
     """Run multiple independent episodes and save their results."""
 
@@ -471,6 +480,29 @@ def run_experiments(
     if teams == 4 and placement != "four-corners":
         raise ValueError(
             "Four-team experiments must use placement='four-corners'."
+        )
+
+    if teams == 4 and team_assignment is not None:
+
+        expected_positions = {"nw", "ne", "se", "sw"}
+
+        if set(team_assignment.keys()) != expected_positions:
+            raise ValueError(
+                "Four-team assignment must contain "
+                "nw, ne, se and sw."
+            )
+
+        if set(team_assignment.values()) != {1, 2, 3, 4}:
+            raise ValueError(
+                "Four-team assignment must assign "
+                "each team exactly once."
+            )
+
+    elif teams == 2 and team_assignment is not None:
+
+        raise ValueError(
+            "Custom team assignments are only supported "
+            "in four-team mode."
         )
 
     # Generate reproducible, distinct episode seeds.
@@ -518,7 +550,52 @@ def run_experiments(
             print_reports=False,
             placement=placement,
             teams=teams,
+            team_assignment=team_assignment,
         )
+
+        # Verify that the episode actually used the requested teams.
+        expected_team_ids = set(range(1, teams + 1))
+
+        actual_team_ids = set(result["episode"]["teams"])
+
+        if actual_team_ids != expected_team_ids:
+            raise ValueError(
+                f"Episode {run_index} has unexpected teams: "
+                f"{sorted(actual_team_ids)}."
+            )
+
+        # Verify resource metrics contain the same teams.
+        economy_team_ids = set(result["resource_economy"]["teams"])
+
+        if economy_team_ids != expected_team_ids:
+            raise ValueError(
+                f"Episode {run_index} has inconsistent resource metrics."
+            )
+
+        # Verify the placement assignment is consistent.
+        if teams == 4:
+
+            actual_assignment = result.get("team_assignment")
+
+            if actual_assignment is None:
+                raise ValueError(
+                    f"Episode {run_index} did not return its team assignment."
+                )
+
+            expected_assignment = team_assignment
+
+            if expected_assignment is None:
+                expected_assignment = {
+                    "nw": 1,
+                    "ne": 2,
+                    "se": 3,
+                    "sw": 4,
+                }
+
+            if actual_assignment != expected_assignment:
+                raise ValueError(
+                    f"Episode {run_index} used an unexpected assignment."
+                )
 
         all_results.append(result)
 
@@ -613,6 +690,11 @@ def run_experiments(
             all_results[0]["episode"]["teams"]
         ),
         "placement": placement,
+        "team_assignment": (
+            all_results[0].get("team_assignment")
+            if teams == 4
+            else None
+        ),
         "log_level": log_level,
         "execution_mode": "headless",
 

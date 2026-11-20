@@ -33,6 +33,15 @@ from orchestration.team_manager import TeamManager
 
 MASTER_SEED = 789
 
+BASE_POSITIONS = ("nw", "ne", "se", "sw")
+
+DEFAULT_FOUR_TEAM_ASSIGNMENT = {
+    "nw": 1,
+    "ne": 2,
+    "se": 3,
+    "sw": 4,
+}
+
 
 def parse_args(argv=None):
     """Parse command-line configuration."""
@@ -112,7 +121,12 @@ def parse_args(argv=None):
     return args
 
 
-def select_active_bases(bases, teams, placement):
+def select_active_bases(
+    bases,
+    teams,
+    placement,
+    team_assignment=None,
+):
     """Assign teams to their starting bases."""
 
     base_lookup = {
@@ -122,18 +136,41 @@ def select_active_bases(bases, teams, placement):
         "sw": bases[3],
     }
 
-    # Four-team mode: activate all four bases.
+    # Four-team mode.
     if teams == 4:
 
-        return {
-            1: base_lookup["nw"],
-            2: base_lookup["ne"],
-            3: base_lookup["se"],
-            4: base_lookup["sw"],
+        if team_assignment is None:
+            team_assignment = DEFAULT_FOUR_TEAM_ASSIGNMENT.copy()
+
+        # Validate the supplied assignment.
+        if set(team_assignment) != set(BASE_POSITIONS):
+            raise ValueError(
+                "Four-team assignment must contain exactly "
+                "nw, ne, se and sw."
+            )
+
+        if set(team_assignment.values()) != {1, 2, 3, 4}:
+            raise ValueError(
+                "Four-team assignment must assign each team "
+                "exactly once."
+            )
+
+        # Convert position -> team into team -> base.
+        active_bases = {
+            team_assignment[position]: base_lookup[position]
+            for position in BASE_POSITIONS
         }
 
-    # Two-team mode: preserve existing placement configurations.
+        return dict(sorted(active_bases.items()))
+
+    # Two-team mode: preserve existing behaviour.
     if teams == 2:
+
+        if team_assignment is not None:
+            raise ValueError(
+                "Custom team assignments are only supported "
+                "in four-team mode."
+            )
 
         team1_base, team2_base = placement.split("-")
 
@@ -153,6 +190,7 @@ def run_episode(
     print_reports=True,
     placement="nw-se",
     teams=2,
+    team_assignment=None,
 ):
     """Run one complete simulation episode and return its results."""
 
@@ -184,6 +222,7 @@ def run_episode(
         bases=bases,
         teams=teams,
         placement=placement,
+        team_assignment=team_assignment,
     )
 
     # Create fresh workers for these teams.
@@ -496,6 +535,13 @@ def run_episode(
         "sim_seed": SIM_SEED,
         "placement": (
             "four-corners" if teams == 4 else placement
+        ),
+        "team_assignment": (
+            team_assignment.copy()
+            if teams == 4 and team_assignment is not None
+            else DEFAULT_FOUR_TEAM_ASSIGNMENT.copy()
+            if teams == 4
+            else None
         ),
 
         "episode": episode_results,
