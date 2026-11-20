@@ -2,6 +2,7 @@
 import salabim as sim
 import random
 import argparse
+from pathlib import Path
 
 
 from island_survivors.explorers import create_explorers
@@ -74,6 +75,16 @@ def parse_args(argv=None):
         help="Directory for experiment CSV results.",
     )
 
+    parser.add_argument(
+        "--placement",
+        choices=["nw-se", "se-nw"],
+        default="nw-se",
+        help=(
+            "Assign Team 1 and Team 2 to Northwest/Southeast "
+            "bases."
+        ),
+    )
+
     args = parser.parse_args(argv)
 
     if args.runs < 1:
@@ -87,12 +98,30 @@ def parse_args(argv=None):
     return args
 
 
+def select_active_bases(bases, placement):
+    """Assign the two teams to their selected starting bases."""
+
+    base_lookup = {
+        "nw": bases[0],
+        "ne": bases[1],
+        "se": bases[2],
+        "sw": bases[3],
+    }
+
+    team1_base, team2_base = placement.split("-")
+
+    return {
+        1: base_lookup[team1_base],
+        2: base_lookup[team2_base],
+    }
+
 
 def run_episode(
     master_seed,
     headless=True,
     log_level="quiet",
     print_reports=True,
+    placement="nw-se",
 ):
     """Run one complete simulation episode and return its results."""
 
@@ -120,10 +149,10 @@ def run_episode(
         )
 
     # Activate two diagonally opposite bases.
-    active_bases = {
-        1: bases[0],  # Northwest
-        2: bases[2],  # Southeast
-    }
+    active_bases = select_active_bases(
+        bases,
+        placement,
+    )
 
     # Create fresh workers for these teams.
     explorers = create_explorers(active_bases)
@@ -433,6 +462,7 @@ def run_episode(
         "master_seed": master_seed,
         "map_seed": MAP_SEED,
         "sim_seed": SIM_SEED,
+        "placement": placement,
 
         "episode": episode_results,
         "winner_team_id": winner_team_id,
@@ -465,6 +495,7 @@ def main(args=None):
             master_seed=args.seed,
             headless=args.headless,
             log_level=log_level,
+            placement=args.placement,
         )
 
     # --------------------------------------------------
@@ -478,7 +509,14 @@ def main(args=None):
         experiment_seed=args.seed,
         runs=args.runs,
         log_level=log_level,
-        output_dir=args.results_dir,
+
+        output_dir=str(
+            Path(args.results_dir)
+            / "position_bias"
+            / args.placement
+        ),
+
+        placement=args.placement,
     )
 
 

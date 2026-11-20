@@ -90,6 +90,7 @@ def build_episode_row(
         "episode_master_seed": episode_seed,
         "map_seed": result["map_seed"],
         "sim_seed": result["sim_seed"],
+        "placement": result["placement"],
         "episode_finished": episode["episode_finished"],
         "episode_duration": episode["episode_duration"],
         "outcome": episode["outcome"],
@@ -146,6 +147,7 @@ def build_economy_rows(
             "episode_master_seed": episode_seed,
             "map_seed": result["map_seed"],
             "sim_seed": result["sim_seed"],
+            "placement": result["placement"],
             "team_id": team_id,
             "workers_total": team["workers_total"],
             "workers_alive": team["workers_alive"],
@@ -426,6 +428,7 @@ def run_experiments(
     runs,
     log_level="summary",
     output_dir="results/baseline_v1",
+    placement="nw-se",
 ):
     """Run multiple independent episodes and save their results."""
 
@@ -471,11 +474,12 @@ def run_experiments(
             )
 
         result = run_episode_fn(
-            master_seed=episode_seed,
-            headless=True,
-            log_level=log_level,
-            print_reports=False,
-        )
+        master_seed=episode_seed,
+        headless=True,
+        log_level=log_level,
+        print_reports=False,
+        placement=placement,
+    )
 
         all_results.append(result)
 
@@ -535,6 +539,8 @@ def run_experiments(
         experiment_seed=experiment_seed,
         episode_results=all_results,
     )
+    
+    summary["placement"] = placement
 
     summary["git_commit"] = git_metadata["commit"]
 
@@ -564,6 +570,7 @@ def run_experiments(
     experiment_metadata = {
         "experiment_seed": experiment_seed,
         "number_of_episodes": runs,
+        "placement": placement,
         "log_level": log_level,
         "execution_mode": "headless",
 
