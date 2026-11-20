@@ -1,0 +1,513 @@
+
+import csv
+import random
+import statistics
+from pathlib import Path
+
+from island_survivors.metrics import RESOURCE_TYPES
+
+
+def write_csv(path, rows):
+    """Write dictionaries to a CSV file."""
+
+    if not rows:
+        raise ValueError(f"No data available to write to {path}.")
+
+    # Combine keys so every row has the same CSV columns.
+    fieldnames = list(
+        dict.fromkeys(
+            key
+            for row in rows
+            for key in row
+        )
+    )
+
+    with path.open(
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as file:
+
+        writer = csv.DictWriter(
+            file,
+            fieldnames=fieldnames,
+            extrasaction="ignore",
+        )
+
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def build_episode_row(
+    run_index,
+    experiment_seed,
+    episode_seed,
+    result,
+):
+    """Flatten one episode result into a CSV row."""
+
+    episode = result["episode"]
+
+    row = {
+        "run_index": run_index,
+        "experiment_seed": experiment_seed,
+        "episode_master_seed": episode_seed,
+        "map_seed": result["map_seed"],
+        "sim_seed": result["sim_seed"],
+        "episode_finished": episode["episode_finished"],
+        "episode_duration": episode["episode_duration"],
+        "outcome": episode["outcome"],
+        "winner_team_id": result["winner_team_id"],
+    }
+
+    for team_id, team in sorted(episode["teams"].items()):
+
+        prefix = f"team_{team_id}"
+
+        row[f"{prefix}_status"] = team["status"]
+        row[f"{prefix}_survival_time"] = team["survival_time"]
+        row[f"{prefix}_eliminated_at"] = team["eliminated_at"]
+
+        row[f"{prefix}_leader_final_health"] = team.get(
+            "leader_final_health"
+        )
+
+        row[f"{prefix}_leader_final_hunger"] = team.get(
+            "leader_final_hunger"
+        )
+
+    return row
+
+
+def build_economy_rows(
+    run_index,
+    experiment_seed,
+    episode_seed,
+    result,
+):
+    """Flatten resource economy metrics into one row per team."""
+
+    economy = result["resource_economy"]
+    rows = []
+
+    for team_id, team in sorted(economy["teams"].items()):
+
+        row = {
+            "run_index": run_index,
+            "experiment_seed": experiment_seed,
+            "episode_master_seed": episode_seed,
+            "map_seed": result["map_seed"],
+            "sim_seed": result["sim_seed"],
+            "team_id": team_id,
+            "workers_total": team["workers_total"],
+            "workers_alive": team["workers_alive"],
+            "worker_berries_consumed": team["worker_berries_consumed"],
+            "worker_eat_events": team["worker_eat_events"],
+            "leader_berries_consumed": team["leader_berries_consumed"],
+            "leader_feed_events": team["leader_feed_events"],
+            "deposit_events": team["deposit_events"],
+        }
+
+        # Flatten each resource dictionary.
+        resource_groups = (
+            "gathered",
+            "looted",
+            "deposited",
+            "withdrawn",
+            "starting_storage",
+            "ending_storage",
+            "resources_carried",
+        )
+
+        for group in resource_groups:
+
+            for resource in RESOURCE_TYPES:
+
+                row[f"{group}_{resource}"] = (
+                    team[group].get(resource, 0)
+                )
+
+        # Include storage accounting checks.
+        for resource in RESOURCE_TYPES:
+
+            balance = team["storage_balance"][resource]
+
+            row[f"storage_balance_{resource}_expected"] = (
+                balance["expected"]
+            )
+
+            row[f"storage_balance_{resource}_actual"] = (
+                balance["actual"]
+            )
+
+            row[f"storage_balance_{resource}_ok"] = (
+                balance["ok"]
+            )
+
+        # Remaining loot is currently tracked globally.
+        for resource in RESOURCE_TYPES:
+
+            row[f"remaining_loot_{resource}"] = (
+                economy["remaining_loot"].get(resource, 0)
+            )
+
+        row["remaining_loot_cache_count"] = (
+            economy["remaining_loot_cache_count"]
+        )
+
+        rows.append(row)
+
+    return rows
+
+
+def calculate_experiment_summary(
+    experiment_seed,
+    episode_results,
+):
+    """Calculate aggregate experiment statistics."""
+
+    runs = len(episode_results)
+
+    if runs == 0:
+        raise ValueError("Cannot summarise an empty experiment.")
+
+    team_ids = sorted(
+        episode_results[0]["episode"]["teams"]
+    )
+
+    summary = {
+        "experiment_seed": experiment_seed,
+        "number_of_episodes": runs,
+    }
+
+    winners = {
+        team_id: 0
+        for team_id in team_ids
+    }
+
+    draw_count = 0
+    incomplete_count = 0
+
+    episode_durations = []
+
+    for result in episode_results:
+
+        winner = result["winner_team_id"]
+
+        if winner in winners:
+            winners[winner] += 1
+
+        elif result["episode"]["outcome"] == "DRAW":
+            draw_count += 1
+
+        else:
+            incomplete_count += 1
+
+        episode_durations.append(
+            result["episode"]["episode_duration"]
+        )
+
+    summary["draw_count"] = draw_count
+    summary["incomplete_count"] = incomplete_count
+
+    summary["average_episode_duration"] = (
+        statistics.fmean(episode_durations)
+    )
+
+    summary["episode_duration_stddev"] = (
+        statistics.pstdev(episode_durations)
+    )
+
+    # Aggregate team-specific performance.
+    for team_id in team_ids:
+
+        prefix = f"team_{team_id}"
+
+        survival_times = [
+            result["episode"]["teams"][team_id]["survival_time"]
+            for result in episode_results
+        ]
+
+        win_count = winners[team_id]
+
+        summary[f"{prefix}_wins"] = win_count
+        summary[f"{prefix}_win_rate"] = win_count / runs
+
+        summary[f"{prefix}_average_survival"] = (
+            statistics.fmean(survival_times)
+        )
+
+        summary[f"{prefix}_survival_stddev"] = (
+            statistics.pstdev(survival_times)
+        )
+
+        def average_resource_metric(group, resource=None):
+
+            values = []
+
+            for result in episode_results:
+
+                team = result["resource_economy"]["teams"][team_id]
+
+                if resource is None:
+                    value = team[group]
+                else:
+                    value = team[group].get(resource, 0)
+
+                values.append(value)
+
+            return statistics.fmean(values)
+
+        summary[f"{prefix}_avg_berries_gathered"] = (
+            average_resource_metric("gathered", "berries")
+        )
+
+        summary[f"{prefix}_avg_berries_deposited"] = (
+            average_resource_metric("deposited", "berries")
+        )
+
+        summary[f"{prefix}_avg_worker_berries_consumed"] = (
+            average_resource_metric("worker_berries_consumed")
+        )
+
+        summary[f"{prefix}_avg_leader_berries_consumed"] = (
+            average_resource_metric("leader_berries_consumed")
+        )
+
+    return summary
+
+
+def print_experiment_summary(summary, team_ids):
+    """Print the aggregate experiment results."""
+
+    print("\n" + "=" * 60)
+    print("                 EXPERIMENT SUMMARY")
+    print("=" * 60)
+
+    print(f"Experiment seed: {summary['experiment_seed']}")
+    print(f"Episodes: {summary['number_of_episodes']}")
+
+    print(
+        f"Average episode duration: "
+        f"{summary['average_episode_duration']:.2f}"
+    )
+
+    print(
+        f"Episode duration stddev: "
+        f"{summary['episode_duration_stddev']:.2f}"
+    )
+
+    print(f"Draws: {summary['draw_count']}")
+    print(f"Incomplete episodes: {summary['incomplete_count']}")
+
+    for team_id in team_ids:
+
+        prefix = f"team_{team_id}"
+
+        print(f"\nTEAM {team_id}")
+        print("-" * 45)
+
+        print(f"Wins: {summary[f'{prefix}_wins']}")
+
+        print(
+            f"Win rate: "
+            f"{summary[f'{prefix}_win_rate'] * 100:.1f}%"
+        )
+
+        print(
+            f"Average leader survival: "
+            f"{summary[f'{prefix}_average_survival']:.2f}"
+        )
+
+        print(
+            f"Survival time stddev: "
+            f"{summary[f'{prefix}_survival_stddev']:.2f}"
+        )
+
+        print(
+            f"Average berries gathered: "
+            f"{summary[f'{prefix}_avg_berries_gathered']:.2f}"
+        )
+
+        print(
+            f"Average berries deposited: "
+            f"{summary[f'{prefix}_avg_berries_deposited']:.2f}"
+        )
+
+        print(
+            f"Average berries consumed by workers: "
+            f"{summary[f'{prefix}_avg_worker_berries_consumed']:.2f}"
+        )
+
+        print(
+            f"Average berries consumed by leader: "
+            f"{summary[f'{prefix}_avg_leader_berries_consumed']:.2f}"
+        )
+
+    print("=" * 60)
+
+
+def run_experiments(
+    run_episode_fn,
+    experiment_seed,
+    runs,
+    log_level="summary",
+    output_dir="results/baseline_v1",
+):
+    """Run multiple independent episodes and save their results."""
+
+    if runs <= 0:
+        raise ValueError("Number of runs must be positive.")
+
+    # Generate reproducible, distinct episode seeds.
+    seed_generator = random.Random(experiment_seed)
+
+    episode_seeds = []
+    used_seeds = set()
+
+    while len(episode_seeds) < runs:
+
+        episode_seed = seed_generator.getrandbits(64)
+
+        if episode_seed not in used_seeds:
+            used_seeds.add(episode_seed)
+            episode_seeds.append(episode_seed)
+
+    all_results = []
+    episode_rows = []
+    economy_rows = []
+
+    print(
+        f"\nStarting experiment: {runs} episodes "
+        f"(experiment seed={experiment_seed})"
+    ) if log_level != "quiet" else None
+
+    # --------------------------------------------------
+    # Run each episode independently.
+    # --------------------------------------------------
+
+    for run_index, episode_seed in enumerate(
+        episode_seeds,
+        start=1,
+    ):
+
+        if log_level in {"info", "debug"}:
+            print(
+                f"\n--- Run {run_index}/{runs} "
+                f"| Episode seed: {episode_seed} ---"
+            )
+
+        result = run_episode_fn(
+            master_seed=episode_seed,
+            headless=True,
+            log_level=log_level,
+            print_reports=False,
+        )
+
+        all_results.append(result)
+
+        episode_rows.append(
+            build_episode_row(
+                run_index=run_index,
+                experiment_seed=experiment_seed,
+                episode_seed=episode_seed,
+                result=result,
+            )
+        )
+
+        economy_rows.extend(
+            build_economy_rows(
+                run_index=run_index,
+                experiment_seed=experiment_seed,
+                episode_seed=episode_seed,
+                result=result,
+            )
+        )
+
+        if log_level == "summary":
+
+            winner = result["winner_team_id"]
+
+            winner_text = (
+                f"Team {winner} wins"
+                if winner is not None
+                else result["episode"]["outcome"]
+            )
+
+            print(
+                f"[Run {run_index}/{runs}] "
+                f"{winner_text} | "
+                f"Duration: "
+                f"{result['episode']['episode_duration']:.1f}"
+            )
+
+        elif log_level in {"info", "debug"}:
+
+            print(
+                f"[Run {run_index}/{runs}] Completed | "
+                f"Outcome: {result['episode']['outcome']}"
+            )
+
+    # --------------------------------------------------
+    # Calculate aggregate statistics.
+    # --------------------------------------------------
+
+    summary = calculate_experiment_summary(
+        experiment_seed=experiment_seed,
+        episode_results=all_results,
+    )
+
+    # --------------------------------------------------
+    # Save experiment outputs.
+    # --------------------------------------------------
+
+    # Use a seed-specific folder so experiments with
+    # different master seeds don't overwrite each other.
+    experiment_path = (
+        Path(output_dir)
+        / f"seed_{experiment_seed}_runs_{runs}"
+    )
+
+    experiment_path.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    write_csv(
+        experiment_path / "episodes.csv",
+        episode_rows,
+    )
+
+    write_csv(
+        experiment_path / "resource_economy.csv",
+        economy_rows,
+    )
+
+    write_csv(
+        experiment_path / "experiment_summary.csv",
+        [summary],
+    )
+
+    # --------------------------------------------------
+    # Display the aggregate report.
+    # --------------------------------------------------
+
+    team_ids = sorted(
+        all_results[0]["episode"]["teams"]
+    )
+
+    print_experiment_summary(
+        summary=summary,
+        team_ids=team_ids,
+    )
+
+    print("\nExperiment files saved to:")
+    print(experiment_path.resolve())
+
+    return {
+        "experiment_seed": experiment_seed,
+        "runs": runs,
+        "results": all_results,
+        "summary": summary,
+        "output_directory": str(experiment_path),
+    }

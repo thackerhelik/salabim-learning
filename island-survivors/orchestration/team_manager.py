@@ -25,6 +25,7 @@ class TeamManager:
         explorers,
         controllers,
         event_logger=None,
+        announce_episode_finished=True,
     ):
 
         if not team_leaders:
@@ -33,6 +34,7 @@ class TeamManager:
         self.env = env
         self.controllers = controllers
         self.event_logger = event_logger
+        self.announce_episode_finished = announce_episode_finished
 
         self.teams = {}
 
@@ -133,10 +135,11 @@ class TeamManager:
             self.episode_finished = True
             self.episode_finished_at = self.env.now()
 
-            print(
-                f"\n[EPISODE FINISHED] "
-                f"All teams eliminated at T={self.env.now():.1f}"
-            )
+            if self.announce_episode_finished:
+                print(
+                    f"\n[EPISODE FINISHED] "
+                    f"All teams eliminated at T={self.env.now():.1f}"
+                )
 
             # Return control to the main Python code.
             self.env.main().activate()

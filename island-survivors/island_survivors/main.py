@@ -11,6 +11,11 @@ from island_survivors.survival import (
     ExplorerNeeds,
     LeaderNeeds,
 )
+from island_survivors.metrics import (
+    collect_resource_economy_metrics,
+    print_resource_economy_summary,
+)
+
 from entities.leader import Leader
 
 from environment import create_resources
@@ -26,327 +31,6 @@ from orchestration.team_manager import TeamManager
 
 
 MASTER_SEED = 789
-
-
-
-RESOURCE_TYPES = ("wood", "stone", "berries")
-
-
-def parse_resource_change(detail, prefix):
-    """Extract a resource quantity change from an event detail."""
-
-    if not detail.startswith(prefix):
-        return None
-
-    try:
-        label, values = detail.split(":", 1)
-        resource_type = label[len(prefix):].strip()
-
-        previous, current = values.split("->", 1)
-
-        return (
-            resource_type,
-            int(previous.strip()),
-            int(current.strip()),
-        )
-
-    except (ValueError, IndexError):
-        return None
-
-
-def print_resource_economy_summary(
-    event_logger,
-    team_storages,
-    explorers,
-    loot_caches,
-    initial_storage_inventory,
-):
-    """Print a detailed resource-flow report for each team."""
-
-    events = event_logger.get_recent_events(
-        limit=10000,
-        include_debug=True,
-    )
-
-    # Initialise counters for each team.
-    metrics = {}
-
-    for team_id in team_storages:
-
-        metrics[team_id] = {
-            "gathered": {},
-            "looted": {},
-            "deposited": {},
-            "withdrawn": {},
-            "worker_consumed": 0,
-            "worker_eat_events": 0,
-            "leader_consumed": 0,
-            "leader_feed_events": 0,
-            "deposit_events": 0,
-        }
-
-    def add_amount(bucket, resource_type, amount):
-        bucket[resource_type] = (
-            bucket.get(resource_type, 0) + amount
-        )
-
-    # --------------------------------------------------
-    # 1. Analyse recorded events.
-    # --------------------------------------------------
-
-    for event in events:
-
-        team_id = event["team_id"]
-
-        if team_id not in metrics:
-            continue
-
-        event_type = event["event"]
-        team_metrics = metrics[team_id]
-
-        for detail in event.get("details") or []:
-
-            inventory_change = parse_resource_change(
-                detail,
-                "Inventory - ",
-            )
-
-            storage_change = parse_resource_change(
-                detail,
-                "Team storage - ",
-            )
-
-            # Resources gathered directly from the world.
-            if event_type == "GATHER" and inventory_change:
-
-                resource, previous, current = inventory_change
-
-                add_amount(
-                    team_metrics["gathered"],
-                    resource,
-                    max(0, current - previous),
-                )
-
-            # Resources recovered from loot caches.
-            elif event_type == "LOOT" and inventory_change:
-
-                resource, previous, current = inventory_change
-
-                add_amount(
-                    team_metrics["looted"],
-                    resource,
-                    max(0, current - previous),
-                )
-
-            # Resources consumed by workers.
-            elif event_type == "EAT" and inventory_change:
-
-                resource, previous, current = inventory_change
-
-                if resource == "berries":
-
-                    consumed = max(0, previous - current)
-
-                    team_metrics["worker_consumed"] += consumed
-
-                    if consumed > 0:
-                        team_metrics["worker_eat_events"] += 1
-
-            # Resources deposited into team storage.
-            elif event_type == "DEPOSIT" and storage_change:
-
-                resource, previous, current = storage_change
-
-                deposited = max(0, current - previous)
-
-                add_amount(
-                    team_metrics["deposited"],
-                    resource,
-                    deposited,
-                )
-
-                if deposited > 0:
-                    team_metrics["deposit_events"] += 1
-
-            # Resources withdrawn from team storage by workers.
-            elif event_type == "WITHDRAW" and storage_change:
-
-                resource, previous, current = storage_change
-
-                add_amount(
-                    team_metrics["withdrawn"],
-                    resource,
-                    max(0, previous - current),
-                )
-
-            # Resources consumed directly by the leader.
-            if event_type == "LEADER_FED":
-
-                if detail.startswith("Berries consumed:"):
-
-                    consumed = int(
-                        detail.split(":", 1)[1].strip()
-                    )
-
-                    team_metrics["leader_consumed"] += consumed
-
-                    if consumed > 0:
-                        team_metrics["leader_feed_events"] += 1
-
-    # --------------------------------------------------
-    # 2. Calculate resources remaining at episode end.
-    # --------------------------------------------------
-
-    loot_totals = {
-        resource: 0
-        for resource in RESOURCE_TYPES
-    }
-
-    for cache in loot_caches.values():
-
-        for resource in RESOURCE_TYPES:
-
-            loot_totals[resource] += (
-                cache.inventory.get(resource, 0)
-            )
-
-    # --------------------------------------------------
-    # 3. Print report.
-    # --------------------------------------------------
-
-    print("\n" + "=" * 55)
-    print("                 RESOURCE ECONOMY")
-    print("=" * 55)
-
-    for team_id in sorted(team_storages):
-
-        team_metrics = metrics[team_id]
-        storage = team_storages[team_id]
-
-        workers = [
-            explorer
-            for explorer in explorers
-            if explorer.team_id == team_id
-        ]
-
-        initial = initial_storage_inventory.get(team_id, {})
-        final = storage.inventory
-
-        carried = {
-            resource: sum(
-                worker.inventory.get(resource, 0)
-                for worker in workers
-            )
-            for resource in RESOURCE_TYPES
-        }
-
-        alive_workers = sum(
-            worker.is_alive
-            for worker in workers
-        )
-
-        def format_resources(inventory):
-            return ", ".join(
-                f"{resource}={inventory.get(resource, 0)}"
-                for resource in RESOURCE_TYPES
-            )
-
-        print(f"\nTEAM {team_id}")
-        print("-" * 45)
-
-        print(
-            f"Workers alive: "
-            f"{alive_workers}/{len(workers)}"
-        )
-
-        print(
-            f"Gathered from world: "
-            f"{format_resources(team_metrics['gathered'])}"
-        )
-
-        print(
-            f"Recovered from loot: "
-            f"{format_resources(team_metrics['looted'])}"
-        )
-
-        print(
-            f"Deposited into storage: "
-            f"{format_resources(team_metrics['deposited'])}"
-        )
-
-        print(
-            f"Withdrawn by workers: "
-            f"{format_resources(team_metrics['withdrawn'])}"
-        )
-
-        print(
-            f"Berries consumed by workers: "
-            f"{team_metrics['worker_consumed']} "
-            f"({team_metrics['worker_eat_events']} eating events)"
-        )
-
-        print(
-            f"Berries consumed by leader: "
-            f"{team_metrics['leader_consumed']} "
-            f"({team_metrics['leader_feed_events']} feeding events)"
-        )
-
-        print(
-            f"Deposit events: "
-            f"{team_metrics['deposit_events']}"
-        )
-
-        print(
-            f"Starting storage: "
-            f"{format_resources(initial)}"
-        )
-
-        print(
-            f"Ending storage: "
-            f"{format_resources(final)}"
-        )
-
-        print(
-            f"Resources still carried: "
-            f"{format_resources(carried)}"
-        )
-
-        # Check that the storage accounting balances.
-        print("\nStorage balance checks:")
-
-        for resource in RESOURCE_TYPES:
-
-            leader_consumption = (
-                team_metrics["leader_consumed"]
-                if resource == "berries"
-                else 0
-            )
-
-            expected = (
-                initial.get(resource, 0)
-                + team_metrics["deposited"].get(resource, 0)
-                - team_metrics["withdrawn"].get(resource, 0)
-                - leader_consumption
-            )
-
-            actual = final.get(resource, 0)
-
-            status = "OK" if expected == actual else "MISMATCH"
-
-            print(
-                f"  {resource}: "
-                f"expected={expected}, actual={actual} "
-                f"[{status}]"
-            )
-
-    # Loot caches are not currently associated with a team.
-    print("\n" + "-" * 45)
-    print("REMAINING LOOT CACHES (ALL TEAMS)")
-    print(format_resources(loot_totals))
-    print(f"Number of remaining caches: {len(loot_caches)}")
-
-    print("=" * 55)
-
 
 
 def parse_args(argv=None):
@@ -376,23 +60,41 @@ def parse_args(argv=None):
         help="Console logging verbosity.",
     )
 
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="Number of episodes to run (default: 1).",
+    )
+
+    parser.add_argument(
+        "--results-dir",
+        type=str,
+        default="results/baseline_v1",
+        help="Directory for experiment CSV results.",
+    )
+
+    args = parser.parse_args(argv)
+
+    if args.runs < 1:
+        parser.error("--runs must be at least 1.")
+
+    if args.runs > 1 and not args.headless:
+        parser.error(
+            "Multiple runs require --headless."
+        )
+
+    return args
 
 
 
-def main(args=None):
-
-    if args is None:
-        args = parse_args()
-
-    master_seed = args.seed
-    headless = args.headless
-
-    # Choose a sensible default based on execution mode.
-    if args.log_level is None:
-        log_level = "summary" if headless else "debug"
-    else:
-        log_level = args.log_level
+def run_episode(
+    master_seed,
+    headless=True,
+    log_level="quiet",
+    print_reports=True,
+):
+    """Run one complete simulation episode and return its results."""
 
     # Derive separate, reproducible seeds.
     seed_generator = random.Random(master_seed)
@@ -410,7 +112,7 @@ def main(args=None):
     features = scenario["features"]
     bases = scenario["bases"]
 
-    if log_level != "quiet":
+    if print_reports and log_level != "quiet":
         print(
             f"Master seed: {master_seed} | "
             f"Map seed: {MAP_SEED} | "
@@ -626,6 +328,9 @@ def main(args=None):
         explorers=explorers,
         controllers=controllers_by_explorer,
         event_logger=event_logger,
+        announce_episode_finished=(
+            print_reports and log_level != "quiet"
+        ),
     )
 
     # Start survival processes for team leaders.
@@ -676,19 +381,105 @@ def main(args=None):
 
     env.run(till=sim.inf)
 
-    # Always print the episode outcome.
-    team_manager.print_results()
+    # --------------------------------------------------
+    # Collect episode results.
+    # --------------------------------------------------
 
-    # Print detailed resource economy for all levels except quiet.
-    if log_level != "quiet":
+    episode_results = team_manager.get_results()
 
-        print_resource_economy_summary(
-            event_logger=event_logger,
-            team_storages=team_storages,
-            explorers=explorers,
-            loot_caches=loot_caches,
-            initial_storage_inventory=initial_storage_inventory,
+    # Capture the final leader state for each team.
+    for team_id, team_result in episode_results["teams"].items():
+
+        leader = team_leaders[team_id]
+
+        team_result["leader_final_health"] = leader.health
+        team_result["leader_final_hunger"] = leader.hunger
+
+    # --------------------------------------------------
+    # Collect resource economy metrics.
+    # --------------------------------------------------
+
+    economy_metrics = collect_resource_economy_metrics(
+        event_logger=event_logger,
+        team_storages=team_storages,
+        explorers=explorers,
+        loot_caches=loot_caches,
+        initial_storage_inventory=initial_storage_inventory,
+    )
+
+    # --------------------------------------------------
+    # Print reports when requested.
+    # --------------------------------------------------
+
+    if print_reports:
+
+        team_manager.print_results()
+
+        if log_level != "quiet":
+            print_resource_economy_summary(economy_metrics)
+
+    # --------------------------------------------------
+    # Return structured episode data.
+    # --------------------------------------------------
+
+    winner_team_id = None
+
+    if episode_results["outcome"].startswith("TEAM "):
+        winner_team_id = int(
+            episode_results["outcome"].split()[1]
         )
+
+    return {
+        "master_seed": master_seed,
+        "map_seed": MAP_SEED,
+        "sim_seed": SIM_SEED,
+
+        "episode": episode_results,
+        "winner_team_id": winner_team_id,
+
+        "resource_economy": economy_metrics,
+    }
+
+
+def main(args=None):
+    """Configure and execute one or multiple episodes."""
+
+    if args is None:
+        args = parse_args()
+
+    # Default logging depends on execution mode.
+    if args.log_level is None:
+        log_level = (
+            "summary" if args.headless else "debug"
+        )
+    else:
+        log_level = args.log_level
+
+    # --------------------------------------------------
+    # Single episode.
+    # --------------------------------------------------
+
+    if args.runs == 1:
+
+        return run_episode(
+            master_seed=args.seed,
+            headless=args.headless,
+            log_level=log_level,
+        )
+
+    # --------------------------------------------------
+    # Multiple episodes.
+    # --------------------------------------------------
+
+    from island_survivors.experiment_runner import run_experiments
+
+    return run_experiments(
+        run_episode_fn=run_episode,
+        experiment_seed=args.seed,
+        runs=args.runs,
+        log_level=log_level,
+        output_dir=args.results_dir,
+    )
 
 
 if __name__ == "__main__":
