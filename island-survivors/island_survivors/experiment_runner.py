@@ -1,10 +1,46 @@
-
+import json
+import subprocess
 import csv
 import random
 import statistics
 from pathlib import Path
 
 from island_survivors.metrics import RESOURCE_TYPES
+
+
+def get_git_metadata():
+    """Retrieve the Git commit and tracked working-tree status."""
+
+    project_root = Path(__file__).resolve().parents[1]
+
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+        return {
+            "commit": commit,
+            "tracked_changes": bool(status),
+        }
+
+    except (FileNotFoundError, subprocess.CalledProcessError):
+
+        return {
+            "commit": "unavailable",
+            "tracked_changes": None,
+        }
 
 
 def write_csv(path, rows):
@@ -76,6 +112,18 @@ def build_episode_row(
             "leader_final_hunger"
         )
 
+    # Remaining loot is a global episode metric.
+    economy = result["resource_economy"]
+
+    row["remaining_loot_cache_count"] = (
+        economy["remaining_loot_cache_count"]
+    )
+
+    for resource in RESOURCE_TYPES:
+        row[f"remaining_loot_{resource}"] = (
+            economy["remaining_loot"].get(resource, 0)
+        )
+
     return row
 
 
@@ -143,17 +191,6 @@ def build_economy_rows(
             row[f"storage_balance_{resource}_ok"] = (
                 balance["ok"]
             )
-
-        # Remaining loot is currently tracked globally.
-        for resource in RESOURCE_TYPES:
-
-            row[f"remaining_loot_{resource}"] = (
-                economy["remaining_loot"].get(resource, 0)
-            )
-
-        row["remaining_loot_cache_count"] = (
-            economy["remaining_loot_cache_count"]
-        )
 
         rows.append(row)
 
@@ -274,6 +311,27 @@ def calculate_experiment_summary(
             average_resource_metric("leader_berries_consumed")
         )
 
+    # Average resources remaining in loot caches.
+    for resource in RESOURCE_TYPES:
+
+        remaining_values = [
+            result["resource_economy"]["remaining_loot"].get(
+                resource, 0
+            )
+            for result in episode_results
+        ]
+
+        summary[f"avg_remaining_loot_{resource}"] = (
+            statistics.fmean(remaining_values)
+        )
+
+    summary["avg_remaining_loot_cache_count"] = (
+        statistics.fmean(
+            result["resource_economy"]["remaining_loot_cache_count"]
+            for result in episode_results
+        )
+    )
+
     return summary
 
 
@@ -343,6 +401,21 @@ def print_experiment_summary(summary, team_ids):
             f"Average berries consumed by leader: "
             f"{summary[f'{prefix}_avg_leader_berries_consumed']:.2f}"
         )
+
+    print("\nGLOBAL RESOURCE REMAINS")
+    print("-" * 45)
+
+    for resource in RESOURCE_TYPES:
+
+        print(
+            f"Average remaining {resource}: "
+            f"{summary[f'avg_remaining_loot_{resource}']:.2f}"
+        )
+
+    print(
+        "Average remaining loot caches: "
+        f"{summary['avg_remaining_loot_cache_count']:.2f}"
+    )
 
     print("=" * 60)
 
@@ -449,12 +522,24 @@ def run_experiments(
             )
 
     # --------------------------------------------------
+    # Capture Git metadata.
+    # --------------------------------------------------
+
+    git_metadata = get_git_metadata()
+
+    # --------------------------------------------------
     # Calculate aggregate statistics.
     # --------------------------------------------------
 
     summary = calculate_experiment_summary(
         experiment_seed=experiment_seed,
         episode_results=all_results,
+    )
+
+    summary["git_commit"] = git_metadata["commit"]
+
+    summary["tracked_working_tree_changes"] = (
+        git_metadata["tracked_changes"]
     )
 
     # --------------------------------------------------
@@ -472,6 +557,38 @@ def run_experiments(
         parents=True,
         exist_ok=True,
     )
+
+    # Capture the code version used for this experiment.
+    git_metadata = get_git_metadata()
+
+    experiment_metadata = {
+        "experiment_seed": experiment_seed,
+        "number_of_episodes": runs,
+        "log_level": log_level,
+        "execution_mode": "headless",
+
+        "git_commit": git_metadata["commit"],
+        "tracked_working_tree_changes": (
+            git_metadata["tracked_changes"]
+        ),
+
+        "episode_master_seeds": episode_seeds,
+
+        "seed_derivation": (
+            "Each episode master seed is derived from "
+            "random.Random(experiment_seed)."
+        ),
+    }
+
+    with (
+        experiment_path / "metadata.json"
+    ).open("w", encoding="utf-8") as file:
+
+        json.dump(
+            experiment_metadata,
+            file,
+            indent=4,
+        )
 
     write_csv(
         experiment_path / "episodes.csv",
