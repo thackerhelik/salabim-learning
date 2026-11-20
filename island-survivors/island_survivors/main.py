@@ -48,6 +48,14 @@ def parse_args(argv=None):
     )
 
     parser.add_argument(
+        "--teams",
+        type=int,
+        choices=[2, 4],
+        default=2,
+        help="Number of active teams (2 or 4).",
+    )
+
+    parser.add_argument(
         "--seed",
         type=int,
         default=MASTER_SEED,
@@ -95,11 +103,22 @@ def parse_args(argv=None):
             "Multiple runs require --headless."
         )
 
+    if args.runs > 1 and args.teams != 2:
+        parser.error(
+            "Batch experiments currently support only --teams 2. "
+            "Four-team batch support will be added later."
+        )
+
+    if args.teams == 4 and args.placement != "nw-se":
+        parser.error(
+            "--placement is only applicable when --teams 2."
+        )
+
     return args
 
 
-def select_active_bases(bases, placement):
-    """Assign the two teams to their selected starting bases."""
+def select_active_bases(bases, teams, placement):
+    """Assign teams to their starting bases."""
 
     base_lookup = {
         "nw": bases[0],
@@ -108,13 +127,29 @@ def select_active_bases(bases, placement):
         "sw": bases[3],
     }
 
-    team1_base, team2_base = placement.split("-")
+    # Four-team mode: activate all four bases.
+    if teams == 4:
 
-    return {
-        1: base_lookup[team1_base],
-        2: base_lookup[team2_base],
-    }
+        return {
+            1: base_lookup["nw"],
+            2: base_lookup["ne"],
+            3: base_lookup["se"],
+            4: base_lookup["sw"],
+        }
 
+    # Two-team mode: preserve existing placement configurations.
+    if teams == 2:
+
+        team1_base, team2_base = placement.split("-")
+
+        return {
+            1: base_lookup[team1_base],
+            2: base_lookup[team2_base],
+        }
+
+    raise ValueError(
+        f"Unsupported number of teams: {teams}"
+    )
 
 def run_episode(
     master_seed,
@@ -122,6 +157,7 @@ def run_episode(
     log_level="quiet",
     print_reports=True,
     placement="nw-se",
+    teams=2,
 ):
     """Run one complete simulation episode and return its results."""
 
@@ -148,10 +184,11 @@ def run_episode(
             f"Simulation seed: {SIM_SEED}"
         )
 
-    # Activate two diagonally opposite bases.
+    # Activate bases according to the selected team configuration.
     active_bases = select_active_bases(
-        bases,
-        placement,
+        bases=bases,
+        teams=teams,
+        placement=placement,
     )
 
     # Create fresh workers for these teams.
@@ -462,7 +499,9 @@ def run_episode(
         "master_seed": master_seed,
         "map_seed": MAP_SEED,
         "sim_seed": SIM_SEED,
-        "placement": placement,
+        "placement": (
+            "four-corners" if teams == 4 else placement
+        ),
 
         "episode": episode_results,
         "winner_team_id": winner_team_id,
@@ -496,6 +535,7 @@ def main(args=None):
             headless=args.headless,
             log_level=log_level,
             placement=args.placement,
+            teams=args.teams,
         )
 
     # --------------------------------------------------
