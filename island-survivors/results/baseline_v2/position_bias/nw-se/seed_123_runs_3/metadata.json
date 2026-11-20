@@ -9,8 +9,8 @@
     "placement": "nw-se",
     "log_level": "summary",
     "execution_mode": "headless",
-    "git_commit": "4c41f403e0aedcf6d2658db2d5b7e7940879baae",
-    "tracked_working_tree_changes": true,
+    "git_commit": "7aeef010e2493a4ab08e9969f9e6234d8ef4e5e4",
+    "tracked_working_tree_changes": false,
     "episode_master_seeds": [
         4937772249435845478,
         14184741768772312494,
