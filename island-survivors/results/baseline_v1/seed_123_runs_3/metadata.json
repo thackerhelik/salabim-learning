@@ -3,8 +3,8 @@
     "number_of_episodes": 3,
     "log_level": "summary",
     "execution_mode": "headless",
-    "git_commit": "40bce278401a4d9382a77fd0444922f73fa66c9b",
-    "tracked_working_tree_changes": true,
+    "git_commit": "2f1ae07e81b25c2872e7fdee997ac9492d69317a",
+    "tracked_working_tree_changes": false,
     "episode_master_seeds": [
         4937772249435845478,
         14184741768772312494,
