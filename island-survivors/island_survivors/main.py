@@ -103,15 +103,10 @@ def parse_args(argv=None):
             "Multiple runs require --headless."
         )
 
-    if args.runs > 1 and args.teams != 2:
-        parser.error(
-            "Batch experiments currently support only --teams 2. "
-            "Four-team batch support will be added later."
-        )
-
     if args.teams == 4 and args.placement != "nw-se":
         parser.error(
-            "--placement is only applicable when --teams 2."
+            "--placement is only applicable when --teams 2. "
+            "Four-team mode always activates all four bases."
         )
 
     return args
@@ -544,19 +539,33 @@ def main(args=None):
 
     from island_survivors.experiment_runner import run_experiments
 
+    if args.teams == 4:
+
+        output_dir = (
+            Path(args.results_dir)
+            / "four_team"
+        )
+
+        experiment_placement = "four-corners"
+
+    else:
+
+        output_dir = (
+            Path(args.results_dir)
+            / "position_bias"
+            / args.placement
+        )
+
+        experiment_placement = args.placement
+
     return run_experiments(
         run_episode_fn=run_episode,
         experiment_seed=args.seed,
         runs=args.runs,
         log_level=log_level,
-
-        output_dir=str(
-            Path(args.results_dir)
-            / "position_bias"
-            / args.placement
-        ),
-
-        placement=args.placement,
+        output_dir=str(output_dir),
+        placement=experiment_placement,
+        teams=args.teams,
     )
 
 

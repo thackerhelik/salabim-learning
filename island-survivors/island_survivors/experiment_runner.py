@@ -91,6 +91,7 @@ def build_episode_row(
         "map_seed": result["map_seed"],
         "sim_seed": result["sim_seed"],
         "placement": result["placement"],
+        "number_of_teams": len(episode["teams"]),
         "episode_finished": episode["episode_finished"],
         "episode_duration": episode["episode_duration"],
         "outcome": episode["outcome"],
@@ -214,9 +215,31 @@ def calculate_experiment_summary(
         episode_results[0]["episode"]["teams"]
     )
 
+    expected_team_ids = set(team_ids)
+
+    # Every episode must contain the same teams.
+    for run_index, result in enumerate(episode_results, start=1):
+
+        episode_team_ids = set(result["episode"]["teams"])
+        economy_team_ids = set(result["resource_economy"]["teams"])
+
+        if episode_team_ids != expected_team_ids:
+            raise ValueError(
+                f"Team IDs differ in episode {run_index}: "
+                f"expected {sorted(expected_team_ids)}, "
+                f"found {sorted(episode_team_ids)}."
+            )
+
+        if economy_team_ids != expected_team_ids:
+            raise ValueError(
+                f"Resource economy team IDs differ in episode {run_index}."
+            )
+
     summary = {
         "experiment_seed": experiment_seed,
         "number_of_episodes": runs,
+        "number_of_teams": len(team_ids),
+        "team_ids": team_ids,
     }
 
     winners = {
@@ -346,6 +369,7 @@ def print_experiment_summary(summary, team_ids):
 
     print(f"Experiment seed: {summary['experiment_seed']}")
     print(f"Episodes: {summary['number_of_episodes']}")
+    print(f"Teams per episode: {summary['number_of_teams']}")
 
     print(
         f"Average episode duration: "
@@ -429,11 +453,25 @@ def run_experiments(
     log_level="summary",
     output_dir="results/baseline_v1",
     placement="nw-se",
+    teams=2,
 ):
     """Run multiple independent episodes and save their results."""
 
     if runs <= 0:
         raise ValueError("Number of runs must be positive.")
+
+    if teams not in (2, 4):
+        raise ValueError("Only 2-team and 4-team experiments are supported.")
+
+    if teams == 2 and placement not in ("nw-se", "se-nw"):
+        raise ValueError(
+            f"Invalid two-team placement: {placement}"
+        )
+
+    if teams == 4 and placement != "four-corners":
+        raise ValueError(
+            "Four-team experiments must use placement='four-corners'."
+        )
 
     # Generate reproducible, distinct episode seeds.
     seed_generator = random.Random(experiment_seed)
@@ -474,12 +512,13 @@ def run_experiments(
             )
 
         result = run_episode_fn(
-        master_seed=episode_seed,
-        headless=True,
-        log_level=log_level,
-        print_reports=False,
-        placement=placement,
-    )
+            master_seed=episode_seed,
+            headless=True,
+            log_level=log_level,
+            print_reports=False,
+            placement=placement,
+            teams=teams,
+        )
 
         all_results.append(result)
 
@@ -565,11 +604,14 @@ def run_experiments(
     )
 
     # Capture the code version used for this experiment.
-    git_metadata = get_git_metadata()
-
+    
     experiment_metadata = {
         "experiment_seed": experiment_seed,
         "number_of_episodes": runs,
+        "number_of_teams": teams,
+        "team_ids": sorted(
+            all_results[0]["episode"]["teams"]
+        ),
         "placement": placement,
         "log_level": log_level,
         "execution_mode": "headless",
