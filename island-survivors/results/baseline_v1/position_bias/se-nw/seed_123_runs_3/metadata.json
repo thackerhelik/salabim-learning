@@ -1,0 +1,15 @@
+{
+    "experiment_seed": 123,
+    "number_of_episodes": 3,
+    "placement": "se-nw",
+    "log_level": "summary",
+    "execution_mode": "headless",
+    "git_commit": "52f14491576e3563dbdd7077ed246d8c8b1425df",
+    "tracked_working_tree_changes": false,
+    "episode_master_seeds": [
+        4937772249435845478,
+        14184741768772312494,
+        4917050030189248263
+    ],
+    "seed_derivation": "Each episode master seed is derived from random.Random(experiment_seed)."
+}

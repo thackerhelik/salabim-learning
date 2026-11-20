@@ -1,0 +1,7 @@
+{
+    "experiment_seed": 456,
+    "matched_episode_pairs": 50,
+    "nw_se_source": "/home/hell/thesis/tutorials/salabim/island-survivors/results/baseline_v1/position_bias/nw-se/seed_456_runs_50/episodes.csv",
+    "se_nw_source": "/home/hell/thesis/tutorials/salabim/island-survivors/results/baseline_v1/position_bias/se-nw/seed_456_runs_50/episodes.csv",
+    "confidence_interval": "95% percentile bootstrap interval using 10000 resamples of paired differences."
+}
