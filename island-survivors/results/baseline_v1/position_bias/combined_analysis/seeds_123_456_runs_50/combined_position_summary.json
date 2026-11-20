@@ -1,0 +1,37 @@
+{
+    "experiment_seeds": [
+        123,
+        456
+    ],
+    "number_of_experiment_batches": 2,
+    "runs_per_experiment_seed": 50,
+    "matched_episode_pairs": 100,
+    "individual_episodes_across_both_configs": 200,
+    "average_northwest_survival": 127.325,
+    "average_southeast_survival": 127.0,
+    "mean_southeast_minus_northwest": -0.325,
+    "stddev_paired_position_difference": 14.820708791785536,
+    "position_difference_ci95_low": -3.275,
+    "position_difference_ci95_high": 2.575,
+    "bootstrap_resamples": 10000,
+    "bootstrap_seed": 2026,
+    "confidence_interval_method": "95% percentile bootstrap CI using paired episode differences.",
+    "northwest_better_pairs": 51,
+    "southeast_better_pairs": 37,
+    "equal_survival_pairs": 12,
+    "average_team1_survival": 127.7,
+    "average_team2_survival": 126.625,
+    "mean_team1_minus_team2": 1.075,
+    "northwest_wins_across_both_configs": 85,
+    "southeast_wins_across_both_configs": 74,
+    "draws_across_both_configs": 41,
+    "northwest_win_rate_excluding_draws": 0.5345911949685535,
+    "southeast_win_rate_excluding_draws": 0.46540880503144655,
+    "paired_outcome_counts": {
+        "SAME_TEAM_WINS_BOTH": 34,
+        "DIFFERENT_TEAMS_WIN": 30,
+        "DRAW_BOTH": 5,
+        "ONE_DRAW_ONE_DECISIVE": 31
+    },
+    "winner_location_changed_pairs": 65
+}
